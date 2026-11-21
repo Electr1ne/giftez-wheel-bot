@@ -30,8 +30,8 @@ VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
 ADMIN_IDS = {int(x.strip()) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip().isdigit()}
-PORT = int(os.getenv("PORT"))
-DB_PATH = os.getenv("DB_PATH")
+PORT = int(os.getenv("PORT") or 3000)
+DB_PATH = os.getenv("DB_PATH") or "roulette.db"
 
 COOLDOWN_SEC = 24 * 60 * 60
 
@@ -130,6 +130,15 @@ def ensure_user(user_id: int, username: str, first_name: str) -> None:
     conn.close()
 
 
+def get_all_user_ids() -> list[int]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users")
+    rows = [int(r[0]) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
 # ==========================================
 # ВАЛИДАЦИЯ initData И ПРОВЕРКА ПОДПИСКИ
 # ==========================================
@@ -165,11 +174,23 @@ def verify_init_data(init_data: str) -> dict | None:
 
 
 async def is_channel_subscribed(user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_CHAT_ID, user_id=user_id)
-        return member.status in {"member", "administrator", "creator"}
-    except Exception:
-        return False
+    targets = []
+    if CHANNEL_CHAT_ID and str(CHANNEL_CHAT_ID).strip():
+        targets.append(str(CHANNEL_CHAT_ID).strip())
+    if CHANNEL_USERNAME and str(CHANNEL_USERNAME).strip():
+        uname = f"@{str(CHANNEL_USERNAME).lstrip('@').strip()}"
+        if uname not in targets:
+            targets.append(uname)
+
+    for chat_ref in targets:
+        try:
+            chat_id_arg: int | str = int(chat_ref) if chat_ref.lstrip("-").isdigit() else chat_ref
+            member = await bot.get_chat_member(chat_id=chat_id_arg, user_id=user_id)
+            if member.status in {"member", "administrator", "creator"}:
+                return True
+        except Exception as e:
+            print(f"[check_sub] Ошибка проверки {chat_ref} для user_id={user_id}: {e}")
+    return False
 
 
 # ==========================================
@@ -214,6 +235,29 @@ async def reminder_worker() -> None:
 
 
 # ==========================================
+# УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ О ВЫПОЛНЕННОЙ ЗАЯВКЕ
+# ==========================================
+async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str) -> None:
+    meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
+    text = (
+        f"✅ Заявка #{req_id} выполнена!\n"
+        f"Подарок: {meta['name']} ({meta['stars']} ★ → {meta['exchange']} ★ при обмене)\n"
+        f"Получатель: @{uname}"
+    )
+    kb = None
+    if VERCEL_APP_URL:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+            ]
+        )
+    try:
+        await bot.send_message(chat_id=uid, text=text, reply_markup=kb)
+    except Exception as e:
+        print(f"[notify_done] Не удалось отправить уведомление пользователю {uid}: {e}")
+
+
+# ==========================================
 # ХЕНДЛЕРЫ БОТА
 # ==========================================
 @dp.message(CommandStart())
@@ -223,11 +267,11 @@ async def cmd_start(message: Message) -> None:
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))],
-            [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME}")],
+            [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{(CHANNEL_USERNAME or '').lstrip('@')}")],
         ]
     )
     await message.answer(
-        f"Привет, {u.first_name or 'игрок'}!\nПодпишись на @{CHANNEL_USERNAME} и крути рулетку.",
+        f"Привет, {u.first_name or 'игрок'}!\nПодпишись на @{(CHANNEL_USERNAME or '').lstrip('@')} и крути рулетку.",
         reply_markup=kb,
     )
 
@@ -267,20 +311,21 @@ async def on_pre_checkout(query: PreCheckoutQuery) -> None:
     await query.answer(ok=True)
 
 
-def mark_request_done(req_id: str) -> tuple[bool, tuple | None]:
+def mark_request_done(req_id: str) -> tuple[bool, bool, tuple | None]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT user_id, prize, username, status FROM claim_requests WHERE id = ?", (req_id,))
     row = cur.fetchone()
     if not row:
         conn.close()
-        return False, None
+        return False, False, None
     uid, prize, uname, st = int(row[0]), row[1], row[2], row[3]
-    if st != "done":
+    already_done = st == "done"
+    if not already_done:
         cur.execute("UPDATE claim_requests SET status = 'done' WHERE id = ?", (req_id,))
         conn.commit()
     conn.close()
-    return True, (uid, prize, uname)
+    return True, not already_done, (uid, prize, uname)
 
 
 @dp.callback_query(F.data.startswith("done_claim:"))
@@ -289,11 +334,13 @@ async def on_admin_done_claim(callback: CallbackQuery) -> None:
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     req_id = callback.data.split(":", 1)[1]
-    ok, info = mark_request_done(req_id)
+    ok, newly_done, info = mark_request_done(req_id)
     if not ok or not info:
         await callback.answer("Заявка не найдена", show_alert=True)
         return
     uid, prize, uname = info
+    if newly_done:
+        await notify_user_request_done(req_id, uid, prize, uname)
     meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
     await callback.message.edit_text(
         f"✅ Выполнено\n"
@@ -582,10 +629,66 @@ async def api_admin_complete(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     req_id = str(body.get("request_id", "")).strip()
-    ok, _ = mark_request_done(req_id)
-    if not ok:
+    ok, newly_done, info = mark_request_done(req_id)
+    if not ok or not info:
         return web.json_response({"ok": False, "message": "Заявка не найдена"})
+    uid, prize, uname = info
+    if newly_done:
+        await notify_user_request_done(req_id, uid, prize, uname)
     return web.json_response({"ok": True, "status": "done"})
+
+
+async def api_admin_reset_all_timers(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET last_free_spin = 0, reminded_24h = 1")
+    updated = cur.rowcount
+    conn.commit()
+    conn.close()
+    return web.json_response({"ok": True, "updated_users": updated})
+
+
+async def api_admin_broadcast(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    text = str(body.get("text", "")).strip()
+    if not text:
+        return web.json_response({"ok": False, "message": "Введите текст рассылки"})
+
+    user_ids = get_all_user_ids()
+    sent_count = 0
+    failed_count = 0
+
+    kb = None
+    if VERCEL_APP_URL:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+            ]
+        )
+
+    for uid in user_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=text, reply_markup=kb)
+            sent_count += 1
+            await asyncio.sleep(0.04)
+        except Exception:
+            failed_count += 1
+
+    return web.json_response({
+        "ok": True,
+        "sent": sent_count,
+        "failed": failed_count,
+        "total": len(user_ids),
+    })
 
 
 async def api_dev_reset_cooldown(request: web.Request) -> web.Response:
@@ -604,7 +707,15 @@ async def api_dev_reset_cooldown(request: web.Request) -> web.Response:
 
 async def on_startup(app: web.Application) -> None:
     init_db()
-    app["bot_task"] = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
+    await bot.delete_webhook(drop_pending_updates=False)
+    app["bot_task"] = asyncio.create_task(
+        dp.start_polling(
+            bot,
+            polling_timeout=5,
+            request_timeout=15,
+            handle_signals=False,
+        )
+    )
     app["rem_task"] = asyncio.create_task(reminder_worker())
 
 
@@ -618,6 +729,7 @@ async def on_cleanup(app: web.Application) -> None:
 
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
+    app.router.add_get("/", lambda r: web.json_response({"ok": True, "service": "giftez"}))
     app.router.add_route("OPTIONS", "/{tail:.*}", lambda r: web.Response(status=204))
     app.router.add_post("/api/state", api_state)
     app.router.add_post("/api/check_sub", api_check_sub)
@@ -626,6 +738,8 @@ def create_app() -> web.Application:
     app.router.add_post("/api/claim_request", api_claim_request)
     app.router.add_post("/api/admin/requests", api_admin_requests)
     app.router.add_post("/api/admin/complete", api_admin_complete)
+    app.router.add_post("/api/admin/reset_all_timers", api_admin_reset_all_timers)
+    app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
     app.router.add_post("/api/dev/reset_cooldown", api_dev_reset_cooldown)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
