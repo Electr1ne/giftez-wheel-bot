@@ -28,7 +28,7 @@ from aiogram.types import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
-CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
+CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID",)
 ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS").split(",") if x.strip().isdigit()}
 PORT = int(os.getenv("PORT"))
 DB_PATH = os.getenv("DB_PATH")
@@ -83,17 +83,8 @@ def init_db() -> None:
             user_id INTEGER PRIMARY KEY,
             username TEXT DEFAULT '',
             first_name TEXT DEFAULT '',
-            device_fp TEXT DEFAULT '',
             last_free_spin INTEGER DEFAULT 0,
-            reminded_24h INTEGER DEFAULT 1,
-            is_twin INTEGER DEFAULT 0
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS fingerprints (
-            device_fp TEXT PRIMARY KEY,
-            first_user_id INTEGER NOT NULL,
-            flagged_twin INTEGER DEFAULT 0
+            reminded_24h INTEGER DEFAULT 1
         )
     """)
     cur.execute("""
@@ -120,44 +111,23 @@ def init_db() -> None:
     conn.close()
 
 
-def ensure_user_and_check_twin(user_id: int, username: str, first_name: str, device_fp: str) -> bool:
-    fp_clean = (device_fp or "").strip()[:128]
+def ensure_user(user_id: int, username: str, first_name: str) -> None:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
-    cur.execute("SELECT user_id, is_twin FROM users WHERE user_id = ?", (user_id,))
+    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     if not row:
         cur.execute(
-            "INSERT INTO users (user_id, username, first_name, device_fp, last_free_spin, reminded_24h, is_twin) VALUES (?, ?, ?, ?, 0, 1, 0)",
-            (user_id, username, first_name, fp_clean),
+            "INSERT INTO users (user_id, username, first_name, last_free_spin, reminded_24h) VALUES (?, ?, ?, 0, 1)",
+            (user_id, username, first_name),
         )
-        current_twin = 0
     else:
-        current_twin = int(row[1] or 0)
         cur.execute(
-            "UPDATE users SET username = ?, first_name = ?, device_fp = COALESCE(NULLIF(?, ''), device_fp) WHERE user_id = ?",
-            (username, first_name, fp_clean, user_id),
+            "UPDATE users SET username = ?, first_name = ? WHERE user_id = ?",
+            (username, first_name, user_id),
         )
-
-    if fp_clean:
-        cur.execute("SELECT first_user_id, flagged_twin FROM fingerprints WHERE device_fp = ?", (fp_clean,))
-        fp_row = cur.fetchone()
-        if not fp_row:
-            cur.execute(
-                "INSERT INTO fingerprints (device_fp, first_user_id, flagged_twin) VALUES (?, ?, ?)",
-                (fp_clean, user_id, current_twin),
-            )
-        else:
-            first_uid, fp_flagged = int(fp_row[0]), int(fp_row[1])
-            if first_uid != user_id or fp_flagged == 1:
-                current_twin = 1
-                cur.execute("UPDATE fingerprints SET flagged_twin = 1 WHERE device_fp = ?", (fp_clean,))
-                cur.execute("UPDATE users SET is_twin = 1 WHERE user_id IN (?, ?)", (first_uid, user_id))
-
     conn.commit()
     conn.close()
-    return bool(current_twin)
 
 
 # ==========================================
@@ -213,8 +183,7 @@ async def reminder_worker() -> None:
             cur = conn.cursor()
             cur.execute("""
                 SELECT user_id FROM users
-                WHERE is_twin = 0
-                  AND last_free_spin > 0
+                WHERE last_free_spin > 0
                   AND (? - last_free_spin) >= ?
                   AND reminded_24h = 0
             """, (now, COOLDOWN_SEC))
@@ -250,7 +219,7 @@ async def reminder_worker() -> None:
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     u = message.from_user
-    ensure_user_and_check_twin(u.id, u.username or "", u.first_name or "", "")
+    ensure_user(u.id, u.username or "", u.first_name or "")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))],
@@ -344,11 +313,10 @@ async def api_state(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
-    is_twin = ensure_user_and_check_twin(
+    ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
-        body.get("device_fp", ""),
     )
     sub_ok = await is_channel_subscribed(uid)
 
@@ -377,7 +345,6 @@ async def api_state(request: web.Request) -> web.Response:
     return web.json_response({
         "ok": True,
         "is_subscribed": sub_ok,
-        "is_twin": is_twin,
         "is_admin": uid in ADMIN_IDS,
         "next_spin_at": (last_free + COOLDOWN_SEC) if last_free > 0 else 0,
         "inventory_items": inv_rows,
@@ -395,14 +362,13 @@ async def api_check_sub(request: web.Request) -> web.Response:
         return web.json_response({"ok": False}, status=401)
 
     uid = int(tg_user["id"])
-    is_twin = ensure_user_and_check_twin(
+    ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
-        body.get("device_fp", ""),
     )
     sub_ok = await is_channel_subscribed(uid)
-    return web.json_response({"ok": True, "is_subscribed": sub_ok, "is_twin": is_twin})
+    return web.json_response({"ok": True, "is_subscribed": sub_ok})
 
 
 async def api_create_star_invoice(request: web.Request) -> web.Response:
@@ -412,14 +378,11 @@ async def api_create_star_invoice(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
-    is_twin = ensure_user_and_check_twin(
+    ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
-        body.get("device_fp", ""),
     )
-    if is_twin:
-        return web.json_response({"ok": False, "error": "twin_detected", "message": "Твинку спины недоступны"}, status=403)
 
     if not await is_channel_subscribed(uid):
         return web.json_response({"ok": False, "error": "not_subscribed", "message": "Нужна подписка на канал"})
@@ -466,18 +429,11 @@ async def api_spin(request: web.Request) -> web.Response:
     is_paid_star = bool(body.get("paid_star", False)) and tier != "free"
     exclude_nothing = bool(body.get("exclude_nothing", False))
 
-    is_twin = ensure_user_and_check_twin(
+    ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
-        body.get("device_fp", ""),
     )
-    if is_twin:
-        return web.json_response({
-            "ok": False,
-            "error": "twin_detected",
-            "message": "Твинку нельзя крутить ни бесплатно, ни за Stars",
-        })
 
     if not await is_channel_subscribed(uid):
         return web.json_response({
