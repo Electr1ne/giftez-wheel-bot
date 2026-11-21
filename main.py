@@ -28,8 +28,8 @@ from aiogram.types import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
-CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID",)
-ADMIN_IDS = {int(x.strip()) for x in os.getenv("ADMIN_IDS").split(",") if x.strip().isdigit()}
+CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
+ADMIN_IDS = {int(x.strip()) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip().isdigit()}
 PORT = int(os.getenv("PORT"))
 DB_PATH = os.getenv("DB_PATH")
 
