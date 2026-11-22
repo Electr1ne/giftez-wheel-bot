@@ -40,90 +40,94 @@ DB_PATH = os.getenv("DB_PATH") or "roulette.db"
 
 COOLDOWN_SEC = 24 * 60 * 60
 SUB_CACHE_TTL_SEC = 60
-REROLL_PRICE_STARS = 3
 
 # Номиналы подарков-пакетов для вывода: списывается -> выдаётся звёздами
 WITHDRAW_PACKS = [
     {"cost": 15,  "payout": 13, "gift": "bear",   "name": "Мишка (15 ★ → 13 ★)"},
-    {"cost": 25,  "payout": 21, "gift": "rose",   "name": "Роза (25 ★ → 21 ★)"},
+    {"cost": 25,  "payout": 21, "gift": "rose",   "gift_alt": "gift", "name": "Роза (25 ★ → 21 ★)"},
     {"cost": 50,  "payout": 43, "gift": "rocket", "name": "Ракета / Торт / Напиток (50 ★ → 43 ★)"},
     {"cost": 100, "payout": 85, "gift": "ring",   "name": "Кольцо (100 ★ → 85 ★)"},
 ]
 
-# Все подарки (Торт, Ракета и Бутылка — все по 50 ★)
 GIFTS_CATALOG = {
-    "bear":   {"id": "bear",   "name": "Мишка",   "stars": 15,  "payout": 13, "icon": "bear.png"},
-    "heart":  {"id": "heart",  "name": "Сердце",  "stars": 15,  "payout": 13, "icon": "heart.png"},
-    "rose":   {"id": "rose",   "name": "Роза",    "stars": 25,  "payout": 21, "icon": "rose.png"},
-    "gift":   {"id": "gift",   "name": "Коробка", "stars": 25,  "payout": 21, "icon": "gift.png"},
-    "bottle": {"id": "bottle", "name": "Напиток", "stars": 50,  "payout": 43, "icon": "bottle.png"},
-    "cake":   {"id": "cake",   "name": "Торт",    "stars": 50,  "payout": 43, "icon": "cake.png"},
-    "rocket": {"id": "rocket", "name": "Ракета",  "stars": 50,  "payout": 43, "icon": "rocket.png"},
-    "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "payout": 85, "icon": "ring.png"},
+    "bear":   {"id": "bear",   "name": "Мишка",   "stars": 15,  "payout": 13,  "icon": "bear.png"},
+    "heart":  {"id": "heart",  "name": "Сердце",  "stars": 15,  "payout": 13,  "icon": "heart.png"},
+    "rose":   {"id": "rose",   "name": "Роза",    "stars": 25,  "payout": 21,  "icon": "rose.png"},
+    "gift":   {"id": "gift",   "name": "Коробка", "stars": 25,  "payout": 21,  "icon": "gift.png"},
+    "bottle": {"id": "bottle", "name": "Напиток", "stars": 50,  "payout": 43,  "icon": "bottle.png"},
+    "cake":   {"id": "cake",   "name": "Торт",    "stars": 50,  "payout": 43,  "icon": "cake.png"},
+    "rocket": {"id": "rocket", "name": "Ракета",  "stars": 50,  "payout": 43,  "icon": "rocket.png"},
+    "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "payout": 85,  "icon": "ring.png"},
 }
 
+# Ежедневный: чаще всего "Ничего" или 1 ★, редкие призы с сильно урезанными шансами
 DAILY_POOL = [
-    {"type": "nothing", "weight": 72.0, "label": "Ничего",  "icon": "nothing.png"},
-    {"type": "stars",   "min": 1,  "max": 3,  "weight": 19.0, "label": "1–3 ★",   "icon": "star"},
-    {"type": "stars",   "min": 4,  "max": 10, "weight": 6.5,  "label": "4–10 ★",  "icon": "star"},
-    {"type": "gift",    "gift": "bear",       "weight": 1.8,  "label": "Мишка (15 ★)", "icon": "bear.png"},
-    {"type": "gift",    "gift": "rose",       "weight": 0.7,  "label": "Роза (25 ★)",  "icon": "rose.png"},
+    {"type": "nothing", "weight": 74.0, "label": "Ничего",       "icon": "nothing.png"},
+    {"type": "stars",   "min": 1, "max": 1,  "weight": 20.0, "label": "1 ★",          "icon": "star"},
+    {"type": "stars",   "min": 2, "max": 5,  "weight": 5.0,  "label": "2–5 ★",        "icon": "star"},
+    {"type": "gift",    "gift": "bear",      "weight": 0.75, "label": "Мишка (15 ★)", "icon": "bear.png"},
+    {"type": "gift",    "gift": "rose",      "weight": 0.25, "label": "Роза (25 ★)",  "icon": "rose.png"},
 ]
 
+# У каждого кейса своя цена перекрута (всегда дешевле самого кейса) и урезанные шансы на топ-дроп
 CASES_CONFIG = {
     "starter": {
         "id": "starter",
         "name": "Стартовый",
         "price": 5,
+        "reroll_price": 3,
         "badge": "ЗИМА",
         "icon": "starter.png",
         "pool": [
-            {"type": "stars", "min": 1, "max": 2,  "weight": 76.0, "label": "1–2 ★",         "icon": "star"},
-            {"type": "stars", "min": 3, "max": 6,  "weight": 17.5, "label": "3–6 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "bear",      "weight": 4.5,  "label": "Мишка (15 ★)",  "icon": "bear.png"},
-            {"type": "gift",  "gift": "rose",      "weight": 2.0,  "label": "Роза (25 ★)",   "icon": "rose.png"},
+            {"type": "stars", "min": 1, "max": 2, "weight": 82.0, "label": "1–2 ★",        "icon": "star"},
+            {"type": "stars", "min": 3, "max": 5, "weight": 15.0, "label": "3–5 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "bear",     "weight": 2.2,  "label": "Мишка (15 ★)", "icon": "bear.png"},
+            {"type": "gift",  "gift": "rose",     "weight": 0.8,  "label": "Роза (25 ★)",  "icon": "rose.png"},
         ],
     },
     "morozniy": {
         "id": "morozniy",
         "name": "Морозный",
         "price": 12,
+        "reroll_price": 7,
         "badge": "ТОП",
         "icon": "morozniy.png",
         "pool": [
-            {"type": "stars", "min": 2, "max": 5,  "weight": 74.0, "label": "2–5 ★",          "icon": "star"},
-            {"type": "stars", "min": 6, "max": 12, "weight": 18.0, "label": "6–12 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "heart",     "weight": 4.5,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
-            {"type": "gift",  "gift": "gift",      "weight": 2.5,  "label": "Коробка (25 ★)", "icon": "gift.png"},
-            {"type": "gift",  "gift": "bottle",    "weight": 1.0,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
+            {"type": "stars", "min": 2, "max": 5,  "weight": 80.0, "label": "2–5 ★",          "icon": "star"},
+            {"type": "stars", "min": 6, "max": 11, "weight": 16.0, "label": "6–11 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "heart",     "weight": 2.5,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
+            {"type": "gift",  "gift": "gift",      "weight": 1.1,  "label": "Коробка (25 ★)", "icon": "gift.png"},
+            {"type": "gift",  "gift": "bottle",    "weight": 0.4,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
         ],
     },
     "sever": {
         "id": "sever",
         "name": "Северный",
         "price": 25,
+        "reroll_price": 15,
         "badge": "NEW",
         "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 5,  "max": 12, "weight": 75.0, "label": "5–12 ★",         "icon": "star"},
-            {"type": "stars", "min": 13, "max": 22, "weight": 17.5, "label": "13–22 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 4.5,  "label": "Торт (50 ★)",    "icon": "cake.png"},
-            {"type": "gift",  "gift": "rocket",     "weight": 2.2,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
-            {"type": "gift",  "gift": "ring",       "weight": 0.8,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 5,  "max": 12, "weight": 80.0, "label": "5–12 ★",         "icon": "star"},
+            {"type": "stars", "min": 13, "max": 22, "weight": 16.2, "label": "13–22 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "cake",       "weight": 2.2,  "label": "Торт (50 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "rocket",     "weight": 1.2,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 0.4,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
     "newyear": {
         "id": "newyear",
         "name": "Новогодний",
         "price": 50,
+        "reroll_price": 30,
         "badge": "VIP",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 10, "max": 24, "weight": 74.0, "label": "10–24 ★",        "icon": "star"},
-            {"type": "stars", "min": 25, "max": 45, "weight": 18.0, "label": "25–45 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 4.2,  "label": "Торт (50 ★)",    "icon": "cake.png"},
-            {"type": "gift",  "gift": "rocket",     "weight": 2.6,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
-            {"type": "gift",  "gift": "ring",       "weight": 1.2,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 25,  "max": 45,  "weight": 74.0, "label": "25–45 ★",            "icon": "star"},
+            {"type": "stars", "min": 55,  "max": 85,  "weight": 19.5, "label": "55–85 ★",            "icon": "star"},
+            {"type": "stars", "min": 100, "max": 140, "weight": 4.2,  "label": "100–140 ★",          "icon": "star"},
+            {"type": "gift",  "gift": "ring",         "weight": 1.8,  "label": "Кольцо (100 ★)",     "icon": "ring.png"},
+            {"type": "stars", "min": 200, "max": 250, "weight": 0.5,  "label": "Джекпот 200–250 ★",  "icon": "star"},
         ],
     },
 }
@@ -145,6 +149,7 @@ async def cors_middleware(request: web.Request, handler):
 
 
 def init_db() -> None:
+    """Мягкая инициализация и миграция без потери существующих данных пользователей."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
@@ -760,7 +765,7 @@ async def api_state(request: web.Request) -> web.Response:
             "is_daily": False,
             "badge": cfg["badge"],
             "icon": cfg["icon"],
-            "reroll_price": REROLL_PRICE_STARS,
+            "reroll_price": int(cfg["reroll_price"]),
             "items": [
                 {"label": x["label"], "type": x["type"], "gift": x.get("gift", ""), "icon": x.get("icon", "star")}
                 for x in cfg["pool"]
@@ -779,7 +784,6 @@ async def api_state(request: web.Request) -> web.Response:
         "next_spin_at": (last_free + COOLDOWN_SEC) if last_free > 0 else 0,
         "my_requests": my_reqs,
         "cases": cases_public,
-        "reroll_price": REROLL_PRICE_STARS,
         "upgrade_targets": list(GIFTS_CATALOG.values()),
         "withdraw_packs": WITHDRAW_PACKS,
     })
@@ -912,6 +916,7 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
     )
 
     price = int(cfg["price"])
+    reroll_price = int(cfg["reroll_price"])
     now = int(time.time())
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -956,7 +961,7 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         "case_id": case_id,
         "drop": drop,
         "can_reroll": True,
-        "reroll_price": REROLL_PRICE_STARS,
+        "reroll_price": reroll_price,
         "stars_balance": balances["stars_balance"],
         "wager_left": balances["wager_left"],
         "withdrawable_stars": balances["withdrawable_stars"],
@@ -986,15 +991,17 @@ async def api_reroll_case_drop(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Кейс не найден"})
 
+    reroll_price = int(cfg["reroll_price"])
+
     cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
     r_u = cur.fetchone() or (0, 0)
     bal, wag = int(r_u[0]), int(r_u[1])
-    if bal < REROLL_PRICE_STARS:
+    if bal < reroll_price:
         conn.close()
-        return web.json_response({"ok": False, "message": f"Для перекрута нужно {REROLL_PRICE_STARS} ★"})
+        return web.json_response({"ok": False, "message": f"Для перекрута нужно {reroll_price} ★"})
 
-    new_bal = bal - REROLL_PRICE_STARS
-    new_wag = max(0, wag - REROLL_PRICE_STARS)
+    new_bal = bal - reroll_price
+    new_wag = max(0, wag - reroll_price)
     cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
 
     new_drop = roll_from_pool(cfg["pool"])
@@ -1016,7 +1023,7 @@ async def api_reroll_case_drop(request: web.Request) -> web.Response:
         "drop_id": drop_id,
         "drop": new_drop,
         "can_reroll": True,
-        "reroll_price": REROLL_PRICE_STARS,
+        "reroll_price": reroll_price,
         "stars_balance": balances["stars_balance"],
         "wager_left": balances["wager_left"],
         "withdrawable_stars": balances["withdrawable_stars"],
@@ -1081,7 +1088,7 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
 
-    chance = min(80.0, max(1.0, round((bet_stars / max(1, target_stars)) * 90.0, 2)))
+    chance = min(75.0, max(1.0, round((bet_stars / max(1, target_stars)) * 84.0, 2)))
     roll = round(random.uniform(0.0, 100.0), 2)
     won = roll <= chance
 
