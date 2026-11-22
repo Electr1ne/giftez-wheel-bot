@@ -26,7 +26,10 @@ from aiogram.types import (
 # НАСТРОЙКИ ОКРУЖЕНИЯ
 # ==========================================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
+_raw_vercel_url = (os.getenv("VERCEL_APP_URL") or "").strip().rstrip("/")
+# Гарантируем, что кнопка запуска открывает именно корень (главную), а не /admin.html
+VERCEL_APP_URL = _raw_vercel_url.removesuffix("/admin.html").removesuffix("/index.html")
+
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
 
@@ -41,13 +44,13 @@ SUB_CACHE_TTL_SEC = 60
 REROLL_PRICE_STARS = 3
 
 PRIZE_INFO = {
-    "nothing": {"name": "Ничего", "stars": 0, "exchange": 0, "kind": "nothing"},
-    "bear":    {"name": "Мишка",  "stars": 15, "exchange": 13, "kind": "gift"},
-    "rose":    {"name": "Роза",   "stars": 25, "exchange": 21, "kind": "gift"},
-    "heart":   {"name": "Сердце", "stars": 15, "exchange": 13, "kind": "gift"},
-    "giftbox": {"name": "Коробка","stars": 25, "exchange": 21, "kind": "gift"},
-    "rocket":  {"name": "Ракета", "stars": 50, "exchange": 42, "kind": "gift"},
-    "ring":    {"name": "Кольцо", "stars": 100, "exchange": 85, "kind": "gift"},
+    "nothing": {"name": "Ничего",  "stars": 0,   "exchange": 0,  "kind": "nothing"},
+    "bear":    {"name": "Мишка",   "stars": 15,  "exchange": 13, "kind": "gift"},
+    "rose":    {"name": "Роза",    "stars": 25,  "exchange": 21, "kind": "gift"},
+    "heart":   {"name": "Сердце",  "stars": 15,  "exchange": 13, "kind": "gift"},
+    "giftbox": {"name": "Коробка", "stars": 25,  "exchange": 21, "kind": "gift"},
+    "rocket":  {"name": "Ракета",  "stars": 50,  "exchange": 42, "kind": "gift"},
+    "ring":    {"name": "Кольцо",  "stars": 100, "exchange": 85, "kind": "gift"},
 }
 
 DAILY_POOL = [
@@ -115,10 +118,11 @@ CASES_CONFIG = {
 }
 
 UPGRADE_TARGETS = {
-    "bear":   {"id": "bear",   "name": "Мишка",  "stars": 15},
-    "rose":   {"id": "rose",   "name": "Роза",   "stars": 25},
-    "rocket": {"id": "rocket", "name": "Ракета", "stars": 50},
-    "ring":   {"id": "ring",   "name": "Кольцо", "stars": 100},
+    "bear":    {"id": "bear",    "name": "Мишка",   "stars": 15},
+    "rose":    {"id": "rose",    "name": "Роза",    "stars": 25},
+    "giftbox": {"id": "giftbox", "name": "Коробка", "stars": 25},
+    "rocket":  {"id": "rocket",  "name": "Ракета",  "stars": 50},
+    "ring":    {"id": "ring",    "name": "Кольцо",  "stars": 100},
 }
 
 bot = Bot(token=BOT_TOKEN)
@@ -382,7 +386,7 @@ async def reminder_worker() -> None:
                 try:
                     kb = InlineKeyboardMarkup(
                         inline_keyboard=[
-                            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html"))]
                         ]
                     )
                     await bot.send_message(
@@ -412,7 +416,7 @@ async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str
     if VERCEL_APP_URL:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html"))]
             ]
         )
     try:
@@ -427,7 +431,7 @@ async def cmd_start(message: Message) -> None:
     ensure_user(u.id, u.username or "", u.first_name or "")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))],
+            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html"))],
             [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{(CHANNEL_USERNAME or '').lstrip('@')}")],
         ]
     )
@@ -963,12 +967,14 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
+    mode = str(body.get("mode", "stars")).strip()  # "stars" или "item"
     bet_stars = int(body.get("bet_stars", 0) or 0)
+    source_item_id = str(body.get("source_item_id", "")).strip()
     target_id = str(body.get("target_id", "")).strip()
     target = UPGRADE_TARGETS.get(target_id)
 
-    if not target or bet_stars < 1:
-        return web.json_response({"ok": False, "message": "Укажи ставку и цель апгрейда"})
+    if not target:
+        return web.json_response({"ok": False, "message": "Выбери цель апгрейда"})
 
     now = int(time.time())
     conn = sqlite3.connect(DB_PATH)
@@ -976,16 +982,37 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
     cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
     bal = int((cur.fetchone() or [0])[0])
 
-    if bal < bet_stars:
-        conn.close()
-        return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
+    stake_value = 0
+    if mode == "item":
+        cur.execute(
+            "SELECT id, prize FROM inventory WHERE id = ? AND user_id = ? AND status = 'inventory'",
+            (source_item_id, uid),
+        )
+        inv_row = cur.fetchone()
+        if not inv_row:
+            conn.close()
+            return web.json_response({"ok": False, "message": "Выбранный подарок не найден в инвентаре"})
+        src_prize = inv_row[1]
+        stake_value = int(PRIZE_INFO.get(src_prize, {}).get("stars", 0))
+        if stake_value <= 0 or stake_value >= target["stars"]:
+            conn.close()
+            return web.json_response({"ok": False, "message": "Цель должна быть дороже выбранного подарка"})
+        cur.execute("DELETE FROM inventory WHERE id = ? AND user_id = ?", (source_item_id, uid))
+        new_bal = bal
+    else:
+        if bet_stars < 1:
+            conn.close()
+            return web.json_response({"ok": False, "message": "Укажи ставку от 1 ★"})
+        if bal < bet_stars:
+            conn.close()
+            return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
+        stake_value = bet_stars
+        new_bal = bal - bet_stars
+        cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
 
-    chance = min(80.0, max(1.0, round((bet_stars / max(1, target["stars"])) * 90.0, 2)))
+    chance = min(80.0, max(1.0, round((stake_value / max(1, target["stars"])) * 90.0, 2)))
     roll = round(random.uniform(0.0, 100.0), 2)
     won = roll <= chance
-
-    new_bal = bal - bet_stars
-    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
 
     if won:
         item_id = f"item_{uuid.uuid4().hex[:10]}"
@@ -1323,7 +1350,7 @@ async def api_admin_broadcast(request: web.Request) -> web.Response:
     if VERCEL_APP_URL:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html"))]
             ]
         )
 
