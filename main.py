@@ -27,7 +27,6 @@ from aiogram.types import (
 # ==========================================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 _raw_vercel_url = (os.getenv("VERCEL_APP_URL") or "").strip().rstrip("/")
-# Гарантируем, что кнопка запуска открывает именно корень (главную), а не /admin.html
 VERCEL_APP_URL = _raw_vercel_url.removesuffix("/admin.html").removesuffix("/index.html")
 
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
@@ -43,86 +42,92 @@ COOLDOWN_SEC = 24 * 60 * 60
 SUB_CACHE_TTL_SEC = 60
 REROLL_PRICE_STARS = 3
 
-PRIZE_INFO = {
-    "nothing": {"name": "Ничего",  "stars": 0,   "exchange": 0,  "kind": "nothing"},
-    "bear":    {"name": "Мишка",   "stars": 15,  "exchange": 13, "kind": "gift"},
-    "rose":    {"name": "Роза",    "stars": 25,  "exchange": 21, "kind": "gift"},
-    "heart":   {"name": "Сердце",  "stars": 15,  "exchange": 13, "kind": "gift"},
-    "giftbox": {"name": "Коробка", "stars": 25,  "exchange": 21, "kind": "gift"},
-    "rocket":  {"name": "Ракета",  "stars": 50,  "exchange": 42, "kind": "gift"},
-    "ring":    {"name": "Кольцо",  "stars": 100, "exchange": 85, "kind": "gift"},
-}
-
-DAILY_POOL = [
-    {"type": "nothing", "weight": 48.0, "label": "Ничего"},
-    {"type": "stars",   "min": 1,  "max": 5,  "weight": 30.0, "label": "1–5 ★"},
-    {"type": "stars",   "min": 6,  "max": 12, "weight": 11.0, "label": "6–12 ★"},
-    {"type": "stars",   "min": 13, "max": 20, "weight": 4.0,  "label": "13–20 ★"},
-    {"type": "gift",    "prize": "bear", "weight": 4.5, "label": "Мишка"},
-    {"type": "gift",    "prize": "rose", "weight": 2.5, "label": "Роза"},
+# Номиналы подарков-пакетов для вывода: списывается -> выдаётся звёздами
+WITHDRAW_PACKS = [
+    {"cost": 15,  "payout": 13, "gift": "bear",   "name": "Мишка (15 ★ → 13 ★)"},
+    {"cost": 25,  "payout": 21, "gift": "rose",   "name": "Роза (25 ★ → 21 ★)"},
+    {"cost": 50,  "payout": 43, "gift": "rocket", "name": "Ракета (50 ★ → 43 ★)"},
+    {"cost": 100, "payout": 85, "gift": "ring",   "name": "Кольцо (100 ★ → 85 ★)"},
 ]
 
+# Все подарки для ленты кейсов и целей апгрейдера (награда начисляется в ★ на баланс)
+GIFTS_CATALOG = {
+    "bear":   {"id": "bear",   "name": "Мишка",   "stars": 15,  "icon": "bear.png"},
+    "heart":  {"id": "heart",  "name": "Сердце",  "stars": 15,  "icon": "heart.png"},
+    "rose":   {"id": "rose",   "name": "Роза",    "stars": 25,  "icon": "rose.png"},
+    "gift":   {"id": "gift",   "name": "Коробка", "stars": 25,  "icon": "gift.png"},
+    "bottle": {"id": "bottle", "name": "Напиток", "stars": 35,  "icon": "bottle.png"},
+    "cake":   {"id": "cake",   "name": "Торт",    "stars": 40,  "icon": "cake.png"},
+    "rocket": {"id": "rocket", "name": "Ракета",  "stars": 50,  "icon": "rocket.png"},
+    "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "icon": "ring.png"},
+}
+
+# Пониженные шансы в ежедневном кейсе
+DAILY_POOL = [
+    {"type": "nothing", "weight": 72.0, "label": "Ничего",  "icon": "nothing.png"},
+    {"type": "stars",   "min": 1,  "max": 3,  "weight": 19.0, "label": "1–3 ★",   "icon": "star"},
+    {"type": "stars",   "min": 4,  "max": 10, "weight": 6.5,  "label": "4–10 ★",  "icon": "star"},
+    {"type": "gift",    "gift": "bear",       "weight": 1.8,  "label": "Мишка (15 ★)", "icon": "bear.png"},
+    {"type": "gift",    "gift": "rose",       "weight": 0.7,  "label": "Роза (25 ★)",  "icon": "rose.png"},
+]
+
+# Конфигурация платных кейсов с пониженными шансами
 CASES_CONFIG = {
     "starter": {
         "id": "starter",
         "name": "Стартовый",
         "price": 5,
         "badge": "ЗИМА",
-        "icon": "bear.png",
+        "icon": "starter.png",
         "pool": [
-            {"type": "stars", "min": 1, "max": 4,  "weight": 58.0, "label": "1–4 ★"},
-            {"type": "stars", "min": 5, "max": 10, "weight": 25.0, "label": "5–10 ★"},
-            {"type": "gift",  "prize": "bear",     "weight": 11.0, "label": "Мишка"},
-            {"type": "gift",  "prize": "rose",     "weight": 6.0,  "label": "Роза"},
+            {"type": "stars", "min": 1, "max": 2,  "weight": 76.0, "label": "1–2 ★",         "icon": "star"},
+            {"type": "stars", "min": 3, "max": 6,  "weight": 17.5, "label": "3–6 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "bear",      "weight": 4.5,  "label": "Мишка (15 ★)",  "icon": "bear.png"},
+            {"type": "gift",  "gift": "rose",      "weight": 2.0,  "label": "Роза (25 ★)",   "icon": "rose.png"},
         ],
     },
-    "romance": {
-        "id": "romance",
+    "morozniy": {
+        "id": "morozniy",
         "name": "Морозный",
         "price": 12,
         "badge": "ТОП",
-        "icon": "rose.png",
+        "icon": "morozniy.png",
         "pool": [
-            {"type": "stars", "min": 3, "max": 10, "weight": 50.0, "label": "3–10 ★"},
-            {"type": "gift",  "prize": "heart",    "weight": 22.0, "label": "Сердце"},
-            {"type": "gift",  "prize": "rose",     "weight": 18.0, "label": "Роза"},
-            {"type": "gift",  "prize": "giftbox",  "weight": 10.0, "label": "Коробка"},
+            {"type": "stars", "min": 2, "max": 5,  "weight": 74.0, "label": "2–5 ★",          "icon": "star"},
+            {"type": "stars", "min": 6, "max": 12, "weight": 18.0, "label": "6–12 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "heart",     "weight": 4.5,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
+            {"type": "gift",  "gift": "gift",      "weight": 2.5,  "label": "Коробка (25 ★)", "icon": "gift.png"},
+            {"type": "gift",  "gift": "bottle",    "weight": 1.0,  "label": "Напиток (35 ★)", "icon": "bottle.png"},
         ],
     },
-    "cosmos": {
-        "id": "cosmos",
+    "sever": {
+        "id": "sever",
         "name": "Северный",
         "price": 25,
         "badge": "NEW",
-        "icon": "rocket.png",
+        "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 8, "max": 22, "weight": 52.0, "label": "8–22 ★"},
-            {"type": "gift",  "prize": "rose",     "weight": 25.0, "label": "Роза"},
-            {"type": "gift",  "prize": "rocket",   "weight": 17.0, "label": "Ракета"},
-            {"type": "gift",  "prize": "ring",     "weight": 6.0,  "label": "Кольцо"},
+            {"type": "stars", "min": 5,  "max": 12, "weight": 75.0, "label": "5–12 ★",         "icon": "star"},
+            {"type": "stars", "min": 13, "max": 22, "weight": 17.5, "label": "13–22 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "cake",       "weight": 4.5,  "label": "Торт (40 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "rocket",     "weight": 2.2,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 0.8,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
-    "luxury": {
-        "id": "luxury",
+    "newyear": {
+        "id": "newyear",
         "name": "Новогодний",
         "price": 50,
         "badge": "VIP",
-        "icon": "ring.png",
+        "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 15, "max": 45, "weight": 48.0, "label": "15–45 ★"},
-            {"type": "gift",  "prize": "giftbox",   "weight": 24.0, "label": "Коробка"},
-            {"type": "gift",  "prize": "rocket",    "weight": 18.0, "label": "Ракета"},
-            {"type": "gift",  "prize": "ring",      "weight": 10.0, "label": "Кольцо"},
+            {"type": "stars", "min": 10, "max": 24, "weight": 74.0, "label": "10–24 ★",        "icon": "star"},
+            {"type": "stars", "min": 25, "max": 45, "weight": 18.0, "label": "25–45 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "cake",       "weight": 4.2,  "label": "Торт (40 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "rocket",     "weight": 2.6,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 1.2,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
-}
-
-UPGRADE_TARGETS = {
-    "bear":    {"id": "bear",    "name": "Мишка",   "stars": 15},
-    "rose":    {"id": "rose",    "name": "Роза",    "stars": 25},
-    "giftbox": {"id": "giftbox", "name": "Коробка", "stars": 25},
-    "rocket":  {"id": "rocket",  "name": "Ракета",  "stars": 50},
-    "ring":    {"id": "ring",    "name": "Кольцо",  "stars": 100},
 }
 
 bot = Bot(token=BOT_TOKEN)
@@ -153,6 +158,7 @@ def init_db() -> None:
             last_free_spin INTEGER DEFAULT 0,
             reminded_24h INTEGER DEFAULT 1,
             stars_balance INTEGER DEFAULT 0,
+            wager_left INTEGER DEFAULT 0,
             total_spins INTEGER DEFAULT 0,
             sub_cached INTEGER DEFAULT 0,
             sub_checked_at INTEGER DEFAULT 0
@@ -163,6 +169,8 @@ def init_db() -> None:
     existing_cols = {row[1] for row in cur.fetchall()}
     if "stars_balance" not in existing_cols:
         cur.execute("ALTER TABLE users ADD COLUMN stars_balance INTEGER DEFAULT 0")
+    if "wager_left" not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN wager_left INTEGER DEFAULT 0")
     if "total_spins" not in existing_cols:
         cur.execute("ALTER TABLE users ADD COLUMN total_spins INTEGER DEFAULT 0")
     if "sub_cached" not in existing_cols:
@@ -180,22 +188,13 @@ def init_db() -> None:
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('update_mode', '0')")
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS inventory (
+        CREATE TABLE IF NOT EXISTS withdraw_requests (
             id TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            prize TEXT NOT NULL,
-            won_at INTEGER NOT NULL,
-            status TEXT DEFAULT 'inventory'
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS claim_requests (
-            id TEXT PRIMARY KEY,
-            item_id TEXT NOT NULL,
             user_id INTEGER NOT NULL,
             username TEXT NOT NULL,
-            prize TEXT NOT NULL,
+            cost_stars INTEGER NOT NULL,
+            payout_stars INTEGER NOT NULL,
+            breakdown TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             status TEXT DEFAULT 'processing'
         )
@@ -227,8 +226,10 @@ def init_db() -> None:
             user_id INTEGER NOT NULL,
             case_id TEXT NOT NULL,
             drop_type TEXT NOT NULL,
-            prize TEXT DEFAULT '',
+            gift_id TEXT DEFAULT '',
             stars_amount INTEGER DEFAULT 0,
+            label TEXT DEFAULT '',
+            icon TEXT DEFAULT '',
             rerolled INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -273,8 +274,8 @@ def ensure_user(user_id: int, username: str, first_name: str) -> None:
     if not row:
         cur.execute(
             """
-            INSERT INTO users (user_id, username, first_name, last_free_spin, reminded_24h, stars_balance, total_spins, sub_cached, sub_checked_at)
-            VALUES (?, ?, ?, 0, 1, 0, 0, 0, 0)
+            INSERT INTO users (user_id, username, first_name, last_free_spin, reminded_24h, stars_balance, wager_left, total_spins, sub_cached, sub_checked_at)
+            VALUES (?, ?, ?, 0, 1, 0, 0, 0, 0, 0)
             """,
             (user_id, clean_uname, first_name),
         )
@@ -367,6 +368,64 @@ async def is_channel_subscribed(user_id: int, force_refresh: bool = False) -> bo
     return is_sub
 
 
+# ==========================================
+# РАЗЛОЖЕНИЕ СУММЫ ВЫВОДА НА РОВНЫЕ ПАКЕТЫ (100, 50, 25, 15)
+# ==========================================
+def decompose_withdraw_amount(cost: int) -> dict | None:
+    """
+    Проверяет, можно ли представить cost в виде суммы номиналов 15, 25, 50, 100.
+    Возвращает разложение (какие подарки/номиналы и сколько звёзд к выплате) или None.
+    """
+    if cost < 15:
+        return None
+
+    # Перебираем комбинации так, чтобы использовать минимум пакетов
+    best = None
+    for c100 in range(cost // 100, -1, -1):
+        rem100 = cost - c100 * 100
+        for c50 in range(rem100 // 50, -1, -1):
+            rem50 = rem100 - c50 * 50
+            for c25 in range(rem50 // 25, -1, -1):
+                rem25 = rem50 - c25 * 25
+                if rem25 % 15 == 0:
+                    c15 = rem25 // 15
+                    total_items = c100 + c50 + c25 + c15
+                    if best is None or total_items < best["total_items"]:
+                        payout = c100 * 85 + c50 * 43 + c25 * 21 + c15 * 13
+                        parts = []
+                        if c100:
+                            parts.append(f"{c100}× Кольцо (100→85 ★)")
+                        if c50:
+                            parts.append(f"{c50}× Ракета (50→43 ★)")
+                        if c25:
+                            parts.append(f"{c25}× Роза (25→21 ★)")
+                        if c15:
+                            parts.append(f"{c15}× Мишка (15→13 ★)")
+                        best = {
+                            "cost": cost,
+                            "payout": payout,
+                            "total_items": total_items,
+                            "counts": {"100": c100, "50": c50, "25": c25, "15": c15},
+                            "breakdown": ", ".join(parts),
+                        }
+    return best
+
+
+def suggest_nearest_withdraw_amounts(raw_amount: int, max_available: int) -> list[dict]:
+    """
+    Находит ближайшие валидные суммы вывода (кратные комбинациям 15, 25, 50, 100).
+    """
+    valid = []
+    upper = max(120, raw_amount + 60)
+    for x in range(15, upper + 1, 5):
+        dec = decompose_withdraw_amount(x)
+        if dec:
+            valid.append(dec)
+
+    valid.sort(key=lambda d: (abs(d["cost"] - raw_amount), d["cost"]))
+    return valid[:4]
+
+
 async def reminder_worker() -> None:
     while True:
         try:
@@ -405,11 +464,11 @@ async def reminder_worker() -> None:
         await asyncio.sleep(30)
 
 
-async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str) -> None:
-    meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
+async def notify_user_withdraw_done(req_id: str, uid: int, cost_stars: int, payout_stars: int, breakdown: str, uname: str) -> None:
     text = (
-        f"✅ Заявка #{req_id} выполнена!\n"
-        f"Подарок: {meta['name']} ({meta['stars']} ★ → {meta['exchange']} ★ при обмене)\n"
+        f"✅ Заявка на вывод #{req_id} выполнена!\n"
+        f"Списано: {cost_stars} ★ → Выдано: {payout_stars} ★\n"
+        f"Состав: {breakdown}\n"
         f"Получатель: @{uname}"
     )
     kb = None
@@ -437,7 +496,7 @@ async def cmd_start(message: Message) -> None:
     )
     await message.answer(
         f"Привет, {u.first_name or 'игрок'}!\n"
-        f"Добро пожаловать в GiftezUp — открывай кейсы, прокачивай дроп в апгрейдере и забирай подарки.\n"
+        f"Добро пожаловать в GiftezUp — открывай кейсы, прокачивай звёзды в апгрейдере и выводи награды.\n"
         f"Не забудь подписаться на @{(CHANNEL_USERNAME or '').lstrip('@')}.",
         reply_markup=kb,
     )
@@ -477,25 +536,24 @@ async def cmd_admin(message: Message) -> None:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, user_id, username, prize FROM claim_requests WHERE status = 'processing' ORDER BY created_at DESC LIMIT 20"
+        "SELECT id, user_id, username, cost_stars, payout_stars, breakdown FROM withdraw_requests WHERE status = 'processing' ORDER BY created_at DESC LIMIT 20"
     )
     rows = cur.fetchall()
     conn.close()
 
     if not rows:
-        await message.answer("Активных заявок в обработке нет.")
+        await message.answer("Активных заявок на вывод в обработке нет.")
         return
 
-    for req_id, uid, uname, prize in rows:
-        meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
+    for req_id, uid, uname, cost_s, pay_s, bdown in rows:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="Выдано", callback_data=f"done_claim:{req_id}")]]
         )
         await message.answer(
-            f"🎁 Заявка #{req_id}\n"
-            f"Подарок: {meta['name']} ({meta['stars']} ★ → {meta['exchange']} ★ при обмене)\n"
-            f"Пользователь: @{uname} (ID: {uid})\n"
-            f"Выдача: от 10 минут до 14 дней",
+            f"⭐ Заявка на вывод #{req_id}\n"
+            f"Баланс: {cost_s} ★ → К выдаче: {pay_s} ★\n"
+            f"Пакеты: {bdown}\n"
+            f"Пользователь: @{uname} (ID: {uid})",
             reply_markup=kb,
         )
 
@@ -518,13 +576,22 @@ async def on_successful_payment(message: Message) -> None:
             uid = int(parts[1])
             stars_added = int(sp.total_amount)
             conn = sqlite3.connect(DB_PATH)
+            # Пополненные звёзды добавляются в баланс и требуют 1x отыгрыша (wager_left)
             conn.execute(
-                "UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?",
-                (stars_added, uid),
+                """
+                UPDATE users
+                SET stars_balance = stars_balance + ?,
+                    wager_left = wager_left + ?
+                WHERE user_id = ?
+                """,
+                (stars_added, stars_added, uid),
             )
             conn.commit()
             conn.close()
-            await message.answer(f"⭐ Баланс GiftezUp пополнен на {stars_added} ★!")
+            await message.answer(
+                f"⭐ Баланс GiftezUp пополнен на {stars_added} ★!\n"
+                f"Для вывода пополненных звёзд их нужно отыграть в кейсах или апгрейдере."
+            )
         except Exception as e:
             print(f"[successful_payment] Ошибка начисления: {e}")
 
@@ -532,18 +599,21 @@ async def on_successful_payment(message: Message) -> None:
 def mark_request_done(req_id: str) -> tuple[bool, bool, tuple | None]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT user_id, prize, username, status FROM claim_requests WHERE id = ?", (req_id,))
+    cur.execute(
+        "SELECT user_id, cost_stars, payout_stars, breakdown, username, status FROM withdraw_requests WHERE id = ?",
+        (req_id,),
+    )
     row = cur.fetchone()
     if not row:
         conn.close()
         return False, False, None
-    uid, prize, uname, st = int(row[0]), row[1], row[2], row[3]
+    uid, cost_s, pay_s, bdown, uname, st = int(row[0]), int(row[1]), int(row[2]), row[3], row[4], row[5]
     already_done = st == "done"
     if not already_done:
-        cur.execute("UPDATE claim_requests SET status = 'done' WHERE id = ?", (req_id,))
+        cur.execute("UPDATE withdraw_requests SET status = 'done' WHERE id = ?", (req_id,))
         conn.commit()
     conn.close()
-    return True, not already_done, (uid, prize, uname)
+    return True, not already_done, (uid, cost_s, pay_s, bdown, uname)
 
 
 @dp.callback_query(F.data.startswith("done_claim:"))
@@ -556,13 +626,13 @@ async def on_admin_done_claim(callback: CallbackQuery) -> None:
     if not ok or not info:
         await callback.answer("Заявка не найдена", show_alert=True)
         return
-    uid, prize, uname = info
+    uid, cost_s, pay_s, bdown, uname = info
     if newly_done:
-        await notify_user_request_done(req_id, uid, prize, uname)
-    meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
+        await notify_user_withdraw_done(req_id, uid, cost_s, pay_s, bdown, uname)
     await callback.message.edit_text(
-        f"✅ Выполнено\n"
-        f"Подарок: {meta['name']} ({meta['stars']} ★ → {meta['exchange']} ★)\n"
+        f"✅ Выполнено #{req_id}\n"
+        f"Списано: {cost_s} ★ → Выдано: {pay_s} ★\n"
+        f"Пакеты: {bdown}\n"
         f"Получатель: @{uname} (ID: {uid})"
     )
     await callback.answer("Статус обновлён: Выполнено")
@@ -580,31 +650,56 @@ def roll_from_pool(pool: list[dict]) -> dict:
             break
 
     if chosen["type"] == "nothing":
-        return {"drop_type": "nothing", "prize": "nothing", "stars_amount": 0, "label": "Ничего"}
+        return {
+            "drop_type": "nothing",
+            "gift_id": "nothing",
+            "stars_amount": 0,
+            "label": "Ничего",
+            "icon": "nothing.png",
+        }
     if chosen["type"] == "stars":
         amt = random.randint(int(chosen["min"]), int(chosen["max"]))
-        return {"drop_type": "stars", "prize": "stars", "stars_amount": amt, "label": f"{amt} ★"}
-    prize_key = chosen["prize"]
-    meta = PRIZE_INFO.get(prize_key, {"name": prize_key})
-    return {"drop_type": "gift", "prize": prize_key, "stars_amount": 0, "label": meta["name"]}
+        return {
+            "drop_type": "stars",
+            "gift_id": "stars",
+            "stars_amount": amt,
+            "label": f"{amt} ★",
+            "icon": "star",
+        }
+    g_key = chosen["gift"]
+    g_meta = GIFTS_CATALOG.get(g_key, {"name": g_key, "stars": 15, "icon": "bear.png"})
+    g_stars = int(g_meta["stars"])
+    return {
+        "drop_type": "gift",
+        "gift_id": g_key,
+        "stars_amount": g_stars,
+        "label": f"{g_meta['name']} ({g_stars} ★)",
+        "icon": g_meta["icon"],
+    }
 
 
 def finalize_pending_drop_in_db(conn: sqlite3.Connection, drop_row: tuple) -> None:
-    drop_id, uid, case_id, drop_type, prize, stars_amount, rerolled, created_at = drop_row
-    now = int(time.time())
+    drop_id, uid, case_id, drop_type, gift_id, stars_amount, label, icon, rerolled, created_at = drop_row
     cur = conn.cursor()
-    if drop_type == "stars" and int(stars_amount) > 0:
+    amt = int(stars_amount or 0)
+    if amt > 0:
+        # Выигрыш из кейса сразу идёт на баланс и не увеличивает отыгрыш
         cur.execute(
             "UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?",
-            (int(stars_amount), int(uid)),
-        )
-    elif drop_type == "gift" and prize in PRIZE_INFO:
-        item_id = f"item_{uuid.uuid4().hex[:10]}"
-        cur.execute(
-            "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
-            (item_id, int(uid), prize, now),
+            (amt, int(uid)),
         )
     cur.execute("DELETE FROM pending_drops WHERE drop_id = ?", (drop_id,))
+
+
+def compute_user_balances(stars_balance: int, wager_left: int) -> dict:
+    bal = max(0, int(stars_balance))
+    wag = min(bal, max(0, int(wager_left)))
+    withdrawable = max(0, bal - wag)
+    return {
+        "stars_balance": bal,
+        "wager_left": wag,
+        "withdrawable_stars": withdrawable,
+    }
 
 
 async def api_state(request: web.Request) -> web.Response:
@@ -625,41 +720,33 @@ async def api_state(request: web.Request) -> web.Response:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT last_free_spin, stars_balance, total_spins FROM users WHERE user_id = ?",
+        "SELECT last_free_spin, stars_balance, wager_left, total_spins FROM users WHERE user_id = ?",
         (uid,),
     )
     r_user = cur.fetchone()
     last_free = int(r_user[0]) if r_user else 0
-    stars_balance = int(r_user[1]) if r_user else 0
-    total_spins = int(r_user[2]) if r_user else 0
+    raw_bal = int(r_user[1]) if r_user else 0
+    raw_wag = int(r_user[2]) if r_user else 0
+    total_spins = int(r_user[3]) if r_user else 0
+
+    balances = compute_user_balances(raw_bal, raw_wag)
+    if balances["wager_left"] != raw_wag:
+        cur.execute("UPDATE users SET wager_left = ? WHERE user_id = ?", (balances["wager_left"], uid))
+        conn.commit()
 
     cur.execute(
-        "SELECT id, prize, won_at FROM inventory WHERE user_id = ? AND status = 'inventory' ORDER BY won_at DESC",
-        (uid,),
-    )
-    inv_rows = [
-        {
-            "id": r[0],
-            "prize": r[1],
-            "name": PRIZE_INFO.get(r[1], {}).get("name", r[1]),
-            "stars": PRIZE_INFO.get(r[1], {}).get("stars", 0),
-            "won_at": int(r[2]),
-        }
-        for r in cur.fetchall()
-    ]
-
-    cur.execute(
-        "SELECT id, prize, username, status, created_at FROM claim_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 30",
+        "SELECT id, cost_stars, payout_stars, breakdown, username, status, created_at FROM withdraw_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 30",
         (uid,),
     )
     my_reqs = [
         {
             "id": r[0],
-            "prize": r[1],
-            "name": PRIZE_INFO.get(r[1], {}).get("name", r[1]),
-            "username": r[2],
-            "status": r[3],
-            "created_at": int(r[4]),
+            "cost_stars": int(r[1]),
+            "payout_stars": int(r[2]),
+            "breakdown": r[3],
+            "username": r[4],
+            "status": r[5],
+            "created_at": int(r[6]),
         }
         for r in cur.fetchall()
     ]
@@ -672,9 +759,12 @@ async def api_state(request: web.Request) -> web.Response:
             "price": 0,
             "is_daily": True,
             "badge": "24Ч",
-            "icon": "bear.png",
+            "icon": "daily.png",
             "reroll_price": 0,
-            "items": [{"label": x["label"], "type": x["type"], "prize": x.get("prize", "")} for x in DAILY_POOL],
+            "items": [
+                {"label": x["label"], "type": x["type"], "gift": x.get("gift", ""), "icon": x.get("icon", "star")}
+                for x in DAILY_POOL
+            ],
         }
     ]
     for cid, cfg in CASES_CONFIG.items():
@@ -686,7 +776,10 @@ async def api_state(request: web.Request) -> web.Response:
             "badge": cfg["badge"],
             "icon": cfg["icon"],
             "reroll_price": REROLL_PRICE_STARS,
-            "items": [{"label": x["label"], "type": x["type"], "prize": x.get("prize", "")} for x in cfg["pool"]],
+            "items": [
+                {"label": x["label"], "type": x["type"], "gift": x.get("gift", ""), "icon": x.get("icon", "star")}
+                for x in cfg["pool"]
+            ],
         })
 
     return web.json_response({
@@ -694,14 +787,16 @@ async def api_state(request: web.Request) -> web.Response:
         "is_subscribed": sub_ok,
         "is_admin": uid in ADMIN_IDS,
         "system_modes": modes,
-        "stars_balance": stars_balance,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
         "total_spins": total_spins,
         "next_spin_at": (last_free + COOLDOWN_SEC) if last_free > 0 else 0,
-        "inventory_items": inv_rows,
         "my_requests": my_reqs,
         "cases": cases_public,
         "reroll_price": REROLL_PRICE_STARS,
-        "upgrade_targets": list(UPGRADE_TARGETS.values()),
+        "upgrade_targets": list(GIFTS_CATALOG.values()),
+        "withdraw_packs": WITHDRAW_PACKS,
     })
 
 
@@ -741,7 +836,7 @@ async def api_create_topup_invoice(request: web.Request) -> web.Response:
     payload = f"topup:{uid}:{stars}:{uuid.uuid4().hex[:8]}"
     link = await bot.create_invoice_link(
         title=f"Пополнение GiftezUp ({stars} ★)",
-        description=f"Зачисление {stars} ★ на внутренний баланс GiftezUp",
+        description=f"Зачисление {stars} ★ на баланс GiftezUp",
         payload=payload,
         currency="XTR",
         prices=[LabeledPrice(label=f"{stars} ★ на баланс", amount=stars)],
@@ -772,10 +867,11 @@ async def api_spin_daily(request: web.Request) -> web.Response:
     now = int(time.time())
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT last_free_spin, stars_balance FROM users WHERE user_id = ?", (uid,))
+    cur.execute("SELECT last_free_spin, stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
     row = cur.fetchone()
     last_free = int(row[0]) if row else 0
     stars_balance = int(row[1]) if row else 0
+    wager_left = int(row[2]) if row else 0
 
     if last_free > 0 and (now - last_free) < COOLDOWN_SEC:
         conn.close()
@@ -788,22 +884,16 @@ async def api_spin_daily(request: web.Request) -> web.Response:
 
     drop = roll_from_pool(DAILY_POOL)
     new_balance = stars_balance + int(drop["stars_amount"])
+    balances = compute_user_balances(new_balance, wager_left)
 
     cur.execute(
         """
         UPDATE users
-        SET last_free_spin = ?, reminded_24h = 0, stars_balance = ?, total_spins = total_spins + 1
+        SET last_free_spin = ?, reminded_24h = 0, stars_balance = ?, wager_left = ?, total_spins = total_spins + 1
         WHERE user_id = ?
         """,
-        (now, new_balance, uid),
+        (now, balances["stars_balance"], balances["wager_left"], uid),
     )
-
-    if drop["drop_type"] == "gift":
-        item_id = f"item_{uuid.uuid4().hex[:10]}"
-        cur.execute(
-            "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
-            (item_id, uid, drop["prize"], now),
-        )
 
     conn.commit()
     conn.close()
@@ -811,7 +901,9 @@ async def api_spin_daily(request: web.Request) -> web.Response:
     return web.json_response({
         "ok": True,
         "drop": drop,
-        "stars_balance": new_balance,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
         "next_spin_at": now + COOLDOWN_SEC,
     })
 
@@ -843,33 +935,36 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
     for old_drop in cur.fetchall():
         finalize_pending_drop_in_db(conn, old_drop)
 
-    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
     row = cur.fetchone()
     bal = int(row[0]) if row else 0
+    wag = int(row[1]) if row else 0
     if bal < price:
         conn.commit()
         conn.close()
         return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
 
     new_bal = bal - price
+    new_wag = max(0, wag - price)  # Ставка в кейсе засчитывается в отыгрыш
     cur.execute(
-        "UPDATE users SET stars_balance = ?, total_spins = total_spins + 1 WHERE user_id = ?",
-        (new_bal, uid),
+        "UPDATE users SET stars_balance = ?, wager_left = ?, total_spins = total_spins + 1 WHERE user_id = ?",
+        (new_bal, new_wag, uid),
     )
 
     drop = roll_from_pool(cfg["pool"])
     drop_id = f"drop_{uuid.uuid4().hex[:10]}"
     cur.execute(
         """
-        INSERT INTO pending_drops (drop_id, user_id, case_id, drop_type, prize, stars_amount, rerolled, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+        INSERT INTO pending_drops (drop_id, user_id, case_id, drop_type, gift_id, stars_amount, label, icon, rerolled, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
         """,
-        (drop_id, uid, case_id, drop["drop_type"], drop["prize"], int(drop["stars_amount"]), now),
+        (drop_id, uid, case_id, drop["drop_type"], drop["gift_id"], int(drop["stars_amount"]), drop["label"], drop["icon"], now),
     )
 
     conn.commit()
     conn.close()
 
+    balances = compute_user_balances(new_bal, new_wag)
     return web.json_response({
         "ok": True,
         "drop_id": drop_id,
@@ -877,7 +972,9 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         "drop": drop,
         "can_reroll": True,
         "reroll_price": REROLL_PRICE_STARS,
-        "stars_balance": new_bal,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
     })
 
 
@@ -904,35 +1001,40 @@ async def api_reroll_case_drop(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Кейс не найден"})
 
-    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
-    bal = int((cur.fetchone() or [0])[0])
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+    r_u = cur.fetchone() or (0, 0)
+    bal, wag = int(r_u[0]), int(r_u[1])
     if bal < REROLL_PRICE_STARS:
         conn.close()
         return web.json_response({"ok": False, "message": f"Для перекрута нужно {REROLL_PRICE_STARS} ★"})
 
     new_bal = bal - REROLL_PRICE_STARS
-    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
+    new_wag = max(0, wag - REROLL_PRICE_STARS)
+    cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
 
     new_drop = roll_from_pool(cfg["pool"])
     cur.execute(
         """
         UPDATE pending_drops
-        SET drop_type = ?, prize = ?, stars_amount = ?, rerolled = rerolled + 1
+        SET drop_type = ?, gift_id = ?, stars_amount = ?, label = ?, icon = ?, rerolled = rerolled + 1
         WHERE drop_id = ?
         """,
-        (new_drop["drop_type"], new_drop["prize"], int(new_drop["stars_amount"]), drop_id),
+        (new_drop["drop_type"], new_drop["gift_id"], int(new_drop["stars_amount"]), new_drop["label"], new_drop["icon"], drop_id),
     )
 
     conn.commit()
     conn.close()
 
+    balances = compute_user_balances(new_bal, new_wag)
     return web.json_response({
         "ok": True,
         "drop_id": drop_id,
         "drop": new_drop,
         "can_reroll": True,
         "reroll_price": REROLL_PRICE_STARS,
-        "stars_balance": new_bal,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
     })
 
 
@@ -953,11 +1055,17 @@ async def api_accept_case_drop(request: web.Request) -> web.Response:
         finalize_pending_drop_in_db(conn, drow)
         conn.commit()
 
-    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
-    bal = int((cur.fetchone() or [0])[0])
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+    r_u = cur.fetchone() or (0, 0)
     conn.close()
 
-    return web.json_response({"ok": True, "stars_balance": bal})
+    balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
+    return web.json_response({
+        "ok": True,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
+    })
 
 
 async def api_upgrade_spin(request: web.Request) -> web.Response:
@@ -967,70 +1075,53 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
-    mode = str(body.get("mode", "stars")).strip()  # "stars" или "item"
     bet_stars = int(body.get("bet_stars", 0) or 0)
-    source_item_id = str(body.get("source_item_id", "")).strip()
     target_id = str(body.get("target_id", "")).strip()
-    target = UPGRADE_TARGETS.get(target_id)
+    target = GIFTS_CATALOG.get(target_id)
 
-    if not target:
-        return web.json_response({"ok": False, "message": "Выбери цель апгрейда"})
+    if not target or bet_stars < 1:
+        return web.json_response({"ok": False, "message": "Укажи ставку и цель апгрейда"})
 
-    now = int(time.time())
+    target_stars = int(target["stars"])
+    if bet_stars >= target_stars:
+        return web.json_response({"ok": False, "message": "Цель должна быть дороже ставки"})
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
-    bal = int((cur.fetchone() or [0])[0])
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+    r_u = cur.fetchone() or (0, 0)
+    bal, wag = int(r_u[0]), int(r_u[1])
 
-    stake_value = 0
-    if mode == "item":
-        cur.execute(
-            "SELECT id, prize FROM inventory WHERE id = ? AND user_id = ? AND status = 'inventory'",
-            (source_item_id, uid),
-        )
-        inv_row = cur.fetchone()
-        if not inv_row:
-            conn.close()
-            return web.json_response({"ok": False, "message": "Выбранный подарок не найден в инвентаре"})
-        src_prize = inv_row[1]
-        stake_value = int(PRIZE_INFO.get(src_prize, {}).get("stars", 0))
-        if stake_value <= 0 or stake_value >= target["stars"]:
-            conn.close()
-            return web.json_response({"ok": False, "message": "Цель должна быть дороже выбранного подарка"})
-        cur.execute("DELETE FROM inventory WHERE id = ? AND user_id = ?", (source_item_id, uid))
-        new_bal = bal
-    else:
-        if bet_stars < 1:
-            conn.close()
-            return web.json_response({"ok": False, "message": "Укажи ставку от 1 ★"})
-        if bal < bet_stars:
-            conn.close()
-            return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
-        stake_value = bet_stars
-        new_bal = bal - bet_stars
-        cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
+    if bal < bet_stars:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
 
-    chance = min(80.0, max(1.0, round((stake_value / max(1, target["stars"])) * 90.0, 2)))
+    chance = min(80.0, max(1.0, round((bet_stars / max(1, target_stars)) * 90.0, 2)))
     roll = round(random.uniform(0.0, 100.0), 2)
     won = roll <= chance
 
-    if won:
-        item_id = f"item_{uuid.uuid4().hex[:10]}"
-        cur.execute(
-            "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
-            (item_id, uid, target["id"], now),
-        )
+    # Ставка списывается и уменьшает обязательный отыгрыш
+    new_bal = bal - bet_stars
+    new_wag = max(0, wag - bet_stars)
 
+    if won:
+        # При победе начисляется стоимость целевого подарка в ★ на баланс
+        new_bal += target_stars
+
+    cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
     conn.commit()
     conn.close()
 
+    balances = compute_user_balances(new_bal, new_wag)
     return web.json_response({
         "ok": True,
         "won": won,
         "chance": chance,
         "roll": roll,
         "target": target,
-        "stars_balance": new_bal,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
     })
 
 
@@ -1072,22 +1163,29 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
         (code, uid, now),
     )
     cur.execute("UPDATE promocodes SET uses_count = uses_count + 1 WHERE code = ?", (code,))
-    cur.execute("UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?", (reward_stars, uid))
-    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
-    new_bal = int((cur.fetchone() or [0])[0])
+    # Промо-звёзды также требуют 1x отыгрыша
+    cur.execute(
+        "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
+        (reward_stars, reward_stars, uid),
+    )
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+    r_u = cur.fetchone() or (0, 0)
 
     conn.commit()
     conn.close()
 
+    balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
     return web.json_response({
         "ok": True,
         "reward_stars": reward_stars,
-        "stars_balance": new_bal,
+        "stars_balance": balances["stars_balance"],
+        "wager_left": balances["wager_left"],
+        "withdrawable_stars": balances["withdrawable_stars"],
         "message": f"Промокод активирован: +{reward_stars} ★",
     })
 
 
-async def api_claim_request(request: web.Request) -> web.Response:
+async def api_withdraw_stars(request: web.Request) -> web.Response:
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
@@ -1101,57 +1199,90 @@ async def api_claim_request(request: web.Request) -> web.Response:
     if not final_uname:
         return web.json_response({
             "ok": False,
-            "message": "В Telegram не указан @username — забрать подарок нельзя",
+            "message": "Укажи @username в профиле Telegram для вывода звёзд",
         })
 
-    item_id = str(body.get("item_id", "")).strip()
-    now = int(time.time())
-
+    amount = int(body.get("amount", 0) or 0)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute(
-        "SELECT prize FROM inventory WHERE id = ? AND user_id = ? AND status = 'inventory'",
-        (item_id, uid),
-    )
-    row = cur.fetchone()
-    if not row:
+    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+    r_u = cur.fetchone() or (0, 0)
+    balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
+
+    if balances["wager_left"] > 0 and amount > balances["withdrawable_stars"]:
         conn.close()
-        return web.json_response({"ok": False, "message": "Предмет уже забран или не найден"})
+        return web.json_response({
+            "ok": False,
+            "message": f"Сначала отыграй пополненные звёзды (осталось отыграть: {balances['wager_left']} ★)",
+        })
 
-    prize = row[0]
-    req_id = f"req_{uuid.uuid4().hex[:10]}"
+    if amount > balances["withdrawable_stars"]:
+        conn.close()
+        return web.json_response({
+            "ok": False,
+            "message": f"Доступно к выводу: {balances['withdrawable_stars']} ★",
+        })
 
-    cur.execute("DELETE FROM inventory WHERE id = ? AND user_id = ?", (item_id, uid))
+    dec = decompose_withdraw_amount(amount)
+    if not dec:
+        suggestions = suggest_nearest_withdraw_amounts(amount, balances["withdrawable_stars"])
+        conn.close()
+        return web.json_response({
+            "ok": False,
+            "error": "non_exact_amount",
+            "message": "Сумма должна складываться из пакетов 15, 25, 50 или 100 ★",
+            "suggestions": suggestions,
+        })
+
+    new_bal = balances["stars_balance"] - amount
+    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
+
+    req_id = f"wd_{uuid.uuid4().hex[:10]}"
+    now = int(time.time())
     cur.execute(
-        "INSERT INTO claim_requests (id, item_id, user_id, username, prize, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'processing')",
-        (req_id, item_id, uid, final_uname, prize, now),
+        """
+        INSERT INTO withdraw_requests (id, user_id, username, cost_stars, payout_stars, breakdown, created_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'processing')
+        """,
+        (req_id, uid, final_uname, dec["cost"], dec["payout"], dec["breakdown"], now),
     )
     conn.commit()
     conn.close()
 
-    meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Выдано", callback_data=f"done_claim:{req_id}")]]
     )
-
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(
                 chat_id=admin_id,
                 text=(
-                    f"🎁 Новая заявка на выдачу\n"
-                    f"Подарок: {meta['name']} ({meta['stars']} ★ → {meta['exchange']} ★ при обмене)\n"
-                    f"Пользователь: @{final_uname} (ID: {uid})\n"
-                    f"Выдача: от 10 минут до 14 дней"
+                    f"⭐ Новая заявка на вывод #{req_id}\n"
+                    f"Списано с баланса: {dec['cost']} ★ → К выдаче: {dec['payout']} ★\n"
+                    f"Состав пакетов: {dec['breakdown']}\n"
+                    f"Получатель: @{final_uname} (ID: {uid})"
                 ),
                 reply_markup=kb,
             )
         except Exception:
             pass
 
-    return web.json_response({"ok": True, "request_id": req_id, "status": "processing"})
+    new_balances = compute_user_balances(new_bal, balances["wager_left"])
+    return web.json_response({
+        "ok": True,
+        "request_id": req_id,
+        "cost_stars": dec["cost"],
+        "payout_stars": dec["payout"],
+        "breakdown": dec["breakdown"],
+        "stars_balance": new_balances["stars_balance"],
+        "wager_left": new_balances["wager_left"],
+        "withdrawable_stars": new_balances["withdrawable_stars"],
+    })
 
 
+# ==========================================
+# АДМИНСКИЕ HTTP ЭНДПОИНТЫ
+# ==========================================
 def check_admin(body: dict) -> int | None:
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
@@ -1163,7 +1294,7 @@ def check_admin(body: dict) -> int | None:
 async def api_admin_mode(request: web.Request) -> web.Response:
     body = await request.json()
     if not check_admin(body):
-        return web.json_response({"ok": False, "message": "Нет прав админа или устарел initData"}, status=403)
+        return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
 
     mode = str(body.get("mode", ""))
     enabled = bool(body.get("enabled", False))
@@ -1182,17 +1313,18 @@ async def api_admin_requests(request: web.Request) -> web.Response:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, user_id, username, prize, status, created_at FROM claim_requests ORDER BY created_at DESC LIMIT 60"
+        "SELECT id, user_id, username, cost_stars, payout_stars, breakdown, status, created_at FROM withdraw_requests ORDER BY created_at DESC LIMIT 60"
     )
     reqs = [
         {
             "id": r[0],
             "user_id": int(r[1]),
             "username": r[2],
-            "prize": r[3],
-            "name": PRIZE_INFO.get(r[3], {}).get("name", r[3]),
-            "status": r[4],
-            "created_at": int(r[5]),
+            "cost_stars": int(r[3]),
+            "payout_stars": int(r[4]),
+            "breakdown": r[5],
+            "status": r[6],
+            "created_at": int(r[7]),
         }
         for r in cur.fetchall()
     ]
@@ -1209,9 +1341,9 @@ async def api_admin_complete(request: web.Request) -> web.Response:
     ok, newly_done, info = mark_request_done(req_id)
     if not ok or not info:
         return web.json_response({"ok": False, "message": "Заявка не найдена"})
-    uid, prize, uname = info
+    uid, cost_s, pay_s, bdown, uname = info
     if newly_done:
-        await notify_user_request_done(req_id, uid, prize, uname)
+        await notify_user_withdraw_done(req_id, uid, cost_s, pay_s, bdown, uname)
     return web.json_response({"ok": True, "status": "done"})
 
 
@@ -1223,7 +1355,7 @@ async def api_admin_delete_request(request: web.Request) -> web.Response:
     req_id = str(body.get("request_id", "")).strip()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("DELETE FROM claim_requests WHERE id = ?", (req_id,))
+    cur.execute("DELETE FROM withdraw_requests WHERE id = ?", (req_id,))
     deleted = cur.rowcount
     conn.commit()
     conn.close()
@@ -1242,15 +1374,16 @@ async def api_admin_user_stars(request: web.Request) -> web.Response:
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT user_id, stars_balance FROM users WHERE lower(username) = ?", (target_uname,))
+    cur.execute("SELECT user_id, stars_balance, wager_left FROM users WHERE lower(username) = ?", (target_uname,))
     row = cur.fetchone()
     if not row:
         conn.close()
-        return web.json_response({"ok": False, "message": f"Пользователь @{target_uname} не найден в базе"})
+        return web.json_response({"ok": False, "message": f"Пользователь @{target_uname} не найден"})
 
-    target_uid, old_bal = int(row[0]), int(row[1])
+    target_uid, old_bal, old_wag = int(row[0]), int(row[1]), int(row[2])
     new_bal = max(0, old_bal + delta)
-    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, target_uid))
+    new_wag = min(new_bal, old_wag)
+    cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, target_uid))
     conn.commit()
     conn.close()
 
@@ -1406,7 +1539,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/accept_case_drop", api_accept_case_drop)
     app.router.add_post("/api/upgrade_spin", api_upgrade_spin)
     app.router.add_post("/api/promo_redeem", api_promo_redeem)
-    app.router.add_post("/api/claim_request", api_claim_request)
+    app.router.add_post("/api/withdraw_stars", api_withdraw_stars)
 
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/requests", api_admin_requests)
