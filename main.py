@@ -29,37 +29,103 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
-ADMIN_IDS = {int(x.strip()) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip().isdigit()}
+
+# Читаем ADMIN_IDS из .env и всегда страхуем твоим основным ID 963968579
+_env_admins = {int(x.strip()) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip().isdigit()}
+ADMIN_IDS = _env_admins | {963968579}
+
 PORT = int(os.getenv("PORT") or 3000)
 DB_PATH = os.getenv("DB_PATH") or "roulette.db"
 
 COOLDOWN_SEC = 24 * 60 * 60
-
-TIER_CHANCES = {
-    "free":   {"bear": 0.035, "rose": 0.015},  # 5% приз / 95% ничего
-    "std1":   {"bear": 0.035, "rose": 0.015},  # 1 ★ — как обычный
-    "boost5": {"bear": 0.05,  "rose": 0.05},   # 5 ★ — 10% приз / 90% ничего
-    "top10":  {"bear": 0.12,  "rose": 0.08},   # 10 ★ — 20% приз / 80% ничего
-}
-
-TIER_PRICES = {
-    "std1": 1,
-    "boost5": 5,
-    "top10": 10,
-}
+SUB_CACHE_TTL_SEC = 60
+REROLL_PRICE_STARS = 3
 
 PRIZE_INFO = {
-    "bear": {"name": "Мишка", "stars": 15, "exchange": 13},
-    "rose": {"name": "Роза",   "stars": 25, "exchange": 21},
+    "nothing": {"name": "Ничего", "stars": 0, "exchange": 0, "kind": "nothing"},
+    "bear":    {"name": "Мишка",  "stars": 15, "exchange": 13, "kind": "gift"},
+    "rose":    {"name": "Роза",   "stars": 25, "exchange": 21, "kind": "gift"},
+    "heart":   {"name": "Сердце", "stars": 15, "exchange": 13, "kind": "gift"},
+    "giftbox": {"name": "Коробка","stars": 25, "exchange": 21, "kind": "gift"},
+    "rocket":  {"name": "Ракета", "stars": 50, "exchange": 42, "kind": "gift"},
+    "ring":    {"name": "Кольцо", "stars": 100, "exchange": 85, "kind": "gift"},
+}
+
+DAILY_POOL = [
+    {"type": "nothing", "weight": 48.0, "label": "Ничего"},
+    {"type": "stars",   "min": 1,  "max": 5,  "weight": 30.0, "label": "1–5 ★"},
+    {"type": "stars",   "min": 6,  "max": 12, "weight": 11.0, "label": "6–12 ★"},
+    {"type": "stars",   "min": 13, "max": 20, "weight": 4.0,  "label": "13–20 ★"},
+    {"type": "gift",    "prize": "bear", "weight": 4.5, "label": "Мишка"},
+    {"type": "gift",    "prize": "rose", "weight": 2.5, "label": "Роза"},
+]
+
+CASES_CONFIG = {
+    "starter": {
+        "id": "starter",
+        "name": "Стартовый",
+        "price": 5,
+        "badge": "ЗИМА",
+        "icon": "bear.png",
+        "pool": [
+            {"type": "stars", "min": 1, "max": 4,  "weight": 58.0, "label": "1–4 ★"},
+            {"type": "stars", "min": 5, "max": 10, "weight": 25.0, "label": "5–10 ★"},
+            {"type": "gift",  "prize": "bear",     "weight": 11.0, "label": "Мишка"},
+            {"type": "gift",  "prize": "rose",     "weight": 6.0,  "label": "Роза"},
+        ],
+    },
+    "romance": {
+        "id": "romance",
+        "name": "Морозный",
+        "price": 12,
+        "badge": "ТОП",
+        "icon": "rose.png",
+        "pool": [
+            {"type": "stars", "min": 3, "max": 10, "weight": 50.0, "label": "3–10 ★"},
+            {"type": "gift",  "prize": "heart",    "weight": 22.0, "label": "Сердце"},
+            {"type": "gift",  "prize": "rose",     "weight": 18.0, "label": "Роза"},
+            {"type": "gift",  "prize": "giftbox",  "weight": 10.0, "label": "Коробка"},
+        ],
+    },
+    "cosmos": {
+        "id": "cosmos",
+        "name": "Северный",
+        "price": 25,
+        "badge": "NEW",
+        "icon": "rocket.png",
+        "pool": [
+            {"type": "stars", "min": 8, "max": 22, "weight": 52.0, "label": "8–22 ★"},
+            {"type": "gift",  "prize": "rose",     "weight": 25.0, "label": "Роза"},
+            {"type": "gift",  "prize": "rocket",   "weight": 17.0, "label": "Ракета"},
+            {"type": "gift",  "prize": "ring",     "weight": 6.0,  "label": "Кольцо"},
+        ],
+    },
+    "luxury": {
+        "id": "luxury",
+        "name": "Новогодний",
+        "price": 50,
+        "badge": "VIP",
+        "icon": "ring.png",
+        "pool": [
+            {"type": "stars", "min": 15, "max": 45, "weight": 48.0, "label": "15–45 ★"},
+            {"type": "gift",  "prize": "giftbox",   "weight": 24.0, "label": "Коробка"},
+            {"type": "gift",  "prize": "rocket",    "weight": 18.0, "label": "Ракета"},
+            {"type": "gift",  "prize": "ring",      "weight": 10.0, "label": "Кольцо"},
+        ],
+    },
+}
+
+UPGRADE_TARGETS = {
+    "bear":   {"id": "bear",   "name": "Мишка",  "stars": 15},
+    "rose":   {"id": "rose",   "name": "Роза",   "stars": 25},
+    "rocket": {"id": "rocket", "name": "Ракета", "stars": 50},
+    "ring":   {"id": "ring",   "name": "Кольцо", "stars": 100},
 }
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
-# ==========================================
-# CORS MIDDLEWARE ДЛЯ ЗАПРОСОВ С VERCEL
-# ==========================================
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
     if request.method == "OPTIONS":
@@ -72,21 +138,44 @@ async def cors_middleware(request: web.Request, handler):
     return resp
 
 
-# ==========================================
-# БАЗА ДАННЫХ (SQLite3)
-# ==========================================
 def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT DEFAULT '',
             first_name TEXT DEFAULT '',
             last_free_spin INTEGER DEFAULT 0,
-            reminded_24h INTEGER DEFAULT 1
+            reminded_24h INTEGER DEFAULT 1,
+            stars_balance INTEGER DEFAULT 0,
+            total_spins INTEGER DEFAULT 0,
+            sub_cached INTEGER DEFAULT 0,
+            sub_checked_at INTEGER DEFAULT 0
         )
     """)
+
+    cur.execute("PRAGMA table_info(users)")
+    existing_cols = {row[1] for row in cur.fetchall()}
+    if "stars_balance" not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN stars_balance INTEGER DEFAULT 0")
+    if "total_spins" not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN total_spins INTEGER DEFAULT 0")
+    if "sub_cached" not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN sub_cached INTEGER DEFAULT 0")
+    if "sub_checked_at" not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN sub_checked_at INTEGER DEFAULT 0")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('maintenance_mode', '0')")
+    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('update_mode', '0')")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS inventory (
             id TEXT PRIMARY KEY,
@@ -96,6 +185,7 @@ def init_db() -> None:
             status TEXT DEFAULT 'inventory'
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS claim_requests (
             id TEXT PRIMARY KEY,
@@ -107,24 +197,88 @@ def init_db() -> None:
             status TEXT DEFAULT 'processing'
         )
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS promocodes (
+            code TEXT PRIMARY KEY,
+            reward_stars INTEGER NOT NULL,
+            max_uses INTEGER NOT NULL,
+            uses_count INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS promo_activations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            activated_at INTEGER NOT NULL,
+            UNIQUE(code, user_id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pending_drops (
+            drop_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            case_id TEXT NOT NULL,
+            drop_type TEXT NOT NULL,
+            prize TEXT DEFAULT '',
+            stars_amount INTEGER DEFAULT 0,
+            rerolled INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
 
+def get_system_modes() -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT key, value FROM app_settings WHERE key IN ('maintenance_mode', 'update_mode')")
+    rows = dict(cur.fetchall())
+    conn.close()
+    return {
+        "maintenance": rows.get("maintenance_mode", "0") == "1",
+        "update": rows.get("update_mode", "0") == "1",
+    }
+
+
+def set_system_mode(mode: str, enabled: bool) -> dict:
+    key_map = {"maintenance": "maintenance_mode", "update": "update_mode"}
+    if mode not in key_map:
+        raise ValueError("Invalid mode")
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        (key_map[mode], "1" if enabled else "0"),
+    )
+    conn.commit()
+    conn.close()
+    return get_system_modes()
+
+
 def ensure_user(user_id: int, username: str, first_name: str) -> None:
+    clean_uname = (username or "").lstrip("@").strip()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     if not row:
         cur.execute(
-            "INSERT INTO users (user_id, username, first_name, last_free_spin, reminded_24h) VALUES (?, ?, ?, 0, 1)",
-            (user_id, username, first_name),
+            """
+            INSERT INTO users (user_id, username, first_name, last_free_spin, reminded_24h, stars_balance, total_spins, sub_cached, sub_checked_at)
+            VALUES (?, ?, ?, 0, 1, 0, 0, 0, 0)
+            """,
+            (user_id, clean_uname, first_name),
         )
     else:
         cur.execute(
             "UPDATE users SET username = ?, first_name = ? WHERE user_id = ?",
-            (username, first_name, user_id),
+            (clean_uname, first_name, user_id),
         )
     conn.commit()
     conn.close()
@@ -139,9 +293,6 @@ def get_all_user_ids() -> list[int]:
     return rows
 
 
-# ==========================================
-# ВАЛИДАЦИЯ initData И ПРОВЕРКА ПОДПИСКИ
-# ==========================================
 def verify_init_data(init_data: str) -> dict | None:
     if not init_data:
         return None
@@ -161,7 +312,7 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
     auth_date = int(parsed.get("auth_date", "0") or "0")
-    if time.time() - auth_date > 86400:
+    if time.time() - auth_date > 86400 * 3:
         return None
 
     user_raw = parsed.get("user")
@@ -173,7 +324,17 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
 
-async def is_channel_subscribed(user_id: int) -> bool:
+async def is_channel_subscribed(user_id: int, force_refresh: bool = False) -> bool:
+    now = int(time.time())
+    if not force_refresh:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT sub_cached, sub_checked_at FROM users WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        if row and (now - int(row[1] or 0)) < SUB_CACHE_TTL_SEC:
+            return bool(row[0])
+
     targets = []
     if CHANNEL_CHAT_ID and str(CHANNEL_CHAT_ID).strip():
         targets.append(str(CHANNEL_CHAT_ID).strip())
@@ -182,20 +343,27 @@ async def is_channel_subscribed(user_id: int) -> bool:
         if uname not in targets:
             targets.append(uname)
 
+    is_sub = False
     for chat_ref in targets:
         try:
             chat_id_arg: int | str = int(chat_ref) if chat_ref.lstrip("-").isdigit() else chat_ref
             member = await bot.get_chat_member(chat_id=chat_id_arg, user_id=user_id)
             if member.status in {"member", "administrator", "creator"}:
-                return True
+                is_sub = True
+                break
         except Exception as e:
             print(f"[check_sub] Ошибка проверки {chat_ref} для user_id={user_id}: {e}")
-    return False
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE users SET sub_cached = ?, sub_checked_at = ? WHERE user_id = ?",
+        (1 if is_sub else 0, now, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return is_sub
 
 
-# ==========================================
-# НАПОМИНАНИЕ В ЛС ТОЛЬКО ПОСЛЕ 24Ч БЕСПЛАТНОГО КУЛДАУНА
-# ==========================================
 async def reminder_worker() -> None:
     while True:
         try:
@@ -215,12 +383,12 @@ async def reminder_worker() -> None:
                 try:
                     kb = InlineKeyboardMarkup(
                         inline_keyboard=[
-                            [InlineKeyboardButton(text="Крутить рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
                         ]
                     )
                     await bot.send_message(
                         chat_id=uid,
-                        text="Бесплатный спин в рулетке снова доступен!",
+                        text="Ежедневный бесплатный кейс в GiftezUp снова доступен!",
                         reply_markup=kb,
                     )
                     c2 = sqlite3.connect(DB_PATH)
@@ -234,9 +402,6 @@ async def reminder_worker() -> None:
         await asyncio.sleep(30)
 
 
-# ==========================================
-# УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ О ВЫПОЛНЕННОЙ ЗАЯВКЕ
-# ==========================================
 async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str) -> None:
     meta = PRIZE_INFO.get(prize, {"name": prize, "stars": 0, "exchange": 0})
     text = (
@@ -248,7 +413,7 @@ async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str
     if VERCEL_APP_URL:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
             ]
         )
     try:
@@ -257,23 +422,40 @@ async def notify_user_request_done(req_id: str, uid: int, prize: str, uname: str
         print(f"[notify_done] Не удалось отправить уведомление пользователю {uid}: {e}")
 
 
-# ==========================================
-# ХЕНДЛЕРЫ БОТА
-# ==========================================
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     u = message.from_user
     ensure_user(u.id, u.username or "", u.first_name or "")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))],
+            [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))],
             [InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{(CHANNEL_USERNAME or '').lstrip('@')}")],
         ]
     )
     await message.answer(
-        f"Привет, {u.first_name or 'игрок'}!\nПодпишись на @{(CHANNEL_USERNAME or '').lstrip('@')} и крути рулетку.",
+        f"Привет, {u.first_name or 'игрок'}!\n"
+        f"Добро пожаловать в GiftezUp — открывай кейсы, прокачивай дроп в апгрейдере и забирай подарки.\n"
+        f"Не забудь подписаться на @{(CHANNEL_USERNAME or '').lstrip('@')}.",
         reply_markup=kb,
     )
+
+
+@dp.message(Command("maint"))
+async def cmd_toggle_maint(message: Message) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    cur_modes = get_system_modes()
+    new_modes = set_system_mode("maintenance", not cur_modes["maintenance"])
+    await message.answer(f"Техработы: {'ВКЛ' if new_modes['maintenance'] else 'ВЫКЛ'}")
+
+
+@dp.message(Command("update"))
+async def cmd_toggle_update(message: Message) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    cur_modes = get_system_modes()
+    new_modes = set_system_mode("update", not cur_modes["update"])
+    await message.answer(f"Режим обновления: {'ВКЛ' if new_modes['update'] else 'ВЫКЛ'}")
 
 
 @dp.message(Command("admin"))
@@ -309,6 +491,30 @@ async def cmd_admin(message: Message) -> None:
 @dp.pre_checkout_query()
 async def on_pre_checkout(query: PreCheckoutQuery) -> None:
     await query.answer(ok=True)
+
+
+@dp.message(F.successful_payment)
+async def on_successful_payment(message: Message) -> None:
+    sp = message.successful_payment
+    if not sp or sp.currency != "XTR":
+        return
+
+    payload = sp.invoice_payload or ""
+    parts = payload.split(":")
+    if len(parts) >= 3 and parts[0] == "topup":
+        try:
+            uid = int(parts[1])
+            stars_added = int(sp.total_amount)
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute(
+                "UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?",
+                (stars_added, uid),
+            )
+            conn.commit()
+            conn.close()
+            await message.answer(f"⭐ Баланс GiftezUp пополнен на {stars_added} ★!")
+        except Exception as e:
+            print(f"[successful_payment] Ошибка начисления: {e}")
 
 
 def mark_request_done(req_id: str) -> tuple[bool, bool, tuple | None]:
@@ -350,9 +556,45 @@ async def on_admin_done_claim(callback: CallbackQuery) -> None:
     await callback.answer("Статус обновлён: Выполнено")
 
 
-# ==========================================
-# HTTP API ДЛЯ ФРОНТЕНДА НА VERCEL
-# ==========================================
+def roll_from_pool(pool: list[dict]) -> dict:
+    total_w = sum(float(item["weight"]) for item in pool)
+    r = random.uniform(0, total_w)
+    upto = 0.0
+    chosen = pool[0]
+    for item in pool:
+        upto += float(item["weight"])
+        if r <= upto:
+            chosen = item
+            break
+
+    if chosen["type"] == "nothing":
+        return {"drop_type": "nothing", "prize": "nothing", "stars_amount": 0, "label": "Ничего"}
+    if chosen["type"] == "stars":
+        amt = random.randint(int(chosen["min"]), int(chosen["max"]))
+        return {"drop_type": "stars", "prize": "stars", "stars_amount": amt, "label": f"{amt} ★"}
+    prize_key = chosen["prize"]
+    meta = PRIZE_INFO.get(prize_key, {"name": prize_key})
+    return {"drop_type": "gift", "prize": prize_key, "stars_amount": 0, "label": meta["name"]}
+
+
+def finalize_pending_drop_in_db(conn: sqlite3.Connection, drop_row: tuple) -> None:
+    drop_id, uid, case_id, drop_type, prize, stars_amount, rerolled, created_at = drop_row
+    now = int(time.time())
+    cur = conn.cursor()
+    if drop_type == "stars" and int(stars_amount) > 0:
+        cur.execute(
+            "UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?",
+            (int(stars_amount), int(uid)),
+        )
+    elif drop_type == "gift" and prize in PRIZE_INFO:
+        item_id = f"item_{uuid.uuid4().hex[:10]}"
+        cur.execute(
+            "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
+            (item_id, int(uid), prize, now),
+        )
+    cur.execute("DELETE FROM pending_drops WHERE drop_id = ?", (drop_id,))
+
+
 async def api_state(request: web.Request) -> web.Response:
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
@@ -365,40 +607,89 @@ async def api_state(request: web.Request) -> web.Response:
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
     )
-    sub_ok = await is_channel_subscribed(uid)
+    sub_ok = await is_channel_subscribed(uid, force_refresh=False)
+    modes = get_system_modes()
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT last_free_spin FROM users WHERE user_id = ?", (uid,))
+    cur.execute(
+        "SELECT last_free_spin, stars_balance, total_spins FROM users WHERE user_id = ?",
+        (uid,),
+    )
     r_user = cur.fetchone()
     last_free = int(r_user[0]) if r_user else 0
+    stars_balance = int(r_user[1]) if r_user else 0
+    total_spins = int(r_user[2]) if r_user else 0
 
     cur.execute(
         "SELECT id, prize, won_at FROM inventory WHERE user_id = ? AND status = 'inventory' ORDER BY won_at DESC",
         (uid,),
     )
-    inv_rows = [{"id": r[0], "prize": r[1], "won_at": int(r[2])} for r in cur.fetchall()]
+    inv_rows = [
+        {
+            "id": r[0],
+            "prize": r[1],
+            "name": PRIZE_INFO.get(r[1], {}).get("name", r[1]),
+            "stars": PRIZE_INFO.get(r[1], {}).get("stars", 0),
+            "won_at": int(r[2]),
+        }
+        for r in cur.fetchall()
+    ]
 
     cur.execute(
         "SELECT id, prize, username, status, created_at FROM claim_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 30",
         (uid,),
     )
     my_reqs = [
-        {"id": r[0], "prize": r[1], "username": r[2], "status": r[3], "created_at": int(r[4])}
+        {
+            "id": r[0],
+            "prize": r[1],
+            "name": PRIZE_INFO.get(r[1], {}).get("name", r[1]),
+            "username": r[2],
+            "status": r[3],
+            "created_at": int(r[4]),
+        }
         for r in cur.fetchall()
     ]
     conn.close()
+
+    cases_public = [
+        {
+            "id": "daily",
+            "name": "Ежедневный",
+            "price": 0,
+            "is_daily": True,
+            "badge": "24Ч",
+            "icon": "bear.png",
+            "reroll_price": 0,
+            "items": [{"label": x["label"], "type": x["type"], "prize": x.get("prize", "")} for x in DAILY_POOL],
+        }
+    ]
+    for cid, cfg in CASES_CONFIG.items():
+        cases_public.append({
+            "id": cfg["id"],
+            "name": cfg["name"],
+            "price": cfg["price"],
+            "is_daily": False,
+            "badge": cfg["badge"],
+            "icon": cfg["icon"],
+            "reroll_price": REROLL_PRICE_STARS,
+            "items": [{"label": x["label"], "type": x["type"], "prize": x.get("prize", "")} for x in cfg["pool"]],
+        })
 
     return web.json_response({
         "ok": True,
         "is_subscribed": sub_ok,
         "is_admin": uid in ADMIN_IDS,
+        "system_modes": modes,
+        "stars_balance": stars_balance,
+        "total_spins": total_spins,
         "next_spin_at": (last_free + COOLDOWN_SEC) if last_free > 0 else 0,
         "inventory_items": inv_rows,
         "my_requests": my_reqs,
-        "chances": TIER_CHANCES["free"],
-        "boost_chances": TIER_CHANCES["boost5"],
-        "top10_chances": TIER_CHANCES["top10"],
+        "cases": cases_public,
+        "reroll_price": REROLL_PRICE_STARS,
+        "upgrade_targets": list(UPGRADE_TARGETS.values()),
     })
 
 
@@ -414,110 +705,92 @@ async def api_check_sub(request: web.Request) -> web.Response:
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
     )
-    sub_ok = await is_channel_subscribed(uid)
+    sub_ok = await is_channel_subscribed(uid, force_refresh=True)
     return web.json_response({"ok": True, "is_subscribed": sub_ok})
 
 
-async def api_create_star_invoice(request: web.Request) -> web.Response:
+async def api_create_topup_invoice(request: web.Request) -> web.Response:
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
+    stars = int(body.get("stars", 1) or 1)
+    if stars < 1 or stars > 10000:
+        return web.json_response({"ok": False, "message": "Укажи сумму от 1 до 10 000 ★"})
+
     ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
     )
 
-    if not await is_channel_subscribed(uid):
-        return web.json_response({"ok": False, "error": "not_subscribed", "message": "Нужна подписка на канал"})
-
-    tier = str(body.get("tier", "std1"))
-    stars = TIER_PRICES.get(tier, 1)
-
-    payload = f"spin:{tier}:{uid}:{uuid.uuid4().hex[:8]}"
+    payload = f"topup:{uid}:{stars}:{uuid.uuid4().hex[:8]}"
     link = await bot.create_invoice_link(
-        title=f"Спин в рулетке ({stars} ★)",
-        description="Дополнительный прокрут рулетки",
+        title=f"Пополнение GiftezUp ({stars} ★)",
+        description=f"Зачисление {stars} ★ на внутренний баланс GiftezUp",
         payload=payload,
         currency="XTR",
-        prices=[LabeledPrice(label=f"{stars} ★ Спин", amount=stars)],
+        prices=[LabeledPrice(label=f"{stars} ★ на баланс", amount=stars)],
     )
     return web.json_response({"ok": True, "invoice_link": link, "payload": payload})
 
 
-def roll_prize_server(tier: str, exclude_nothing: bool) -> str:
-    pool = TIER_CHANCES.get(tier, TIER_CHANCES["free"])
-    b = pool["bear"]
-    r = pool["rose"]
-    if exclude_nothing:
-        total = max(1e-9, b + r)
-        return "bear" if (random.random() * total) < b else "rose"
-    x = random.random()
-    if x < b:
-        return "bear"
-    if x < b + r:
-        return "rose"
-    return "nothing"
-
-
-async def api_spin(request: web.Request) -> web.Response:
+async def api_spin_daily(request: web.Request) -> web.Response:
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
-    tier = str(body.get("tier", "free"))
-    if tier not in TIER_CHANCES:
-        tier = "free"
-    is_paid_star = bool(body.get("paid_star", False)) and tier != "free"
-    exclude_nothing = bool(body.get("exclude_nothing", False))
-
     ensure_user(
         uid,
         (tg_user.get("username") or "").lstrip("@"),
         tg_user.get("first_name") or "",
     )
 
-    if not await is_channel_subscribed(uid):
+    if not await is_channel_subscribed(uid, force_refresh=True):
         return web.json_response({
             "ok": False,
             "error": "not_subscribed",
-            "message": "Подпишись на канал перед прокрутом",
+            "message": "Подпишись на канал перед открытием ежедневного кейса",
         })
 
     now = int(time.time())
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT last_free_spin FROM users WHERE user_id = ?", (uid,))
+    cur.execute("SELECT last_free_spin, stars_balance FROM users WHERE user_id = ?", (uid,))
     row = cur.fetchone()
     last_free = int(row[0]) if row else 0
+    stars_balance = int(row[1]) if row else 0
 
-    if not is_paid_star:
-        if last_free > 0 and (now - last_free) < COOLDOWN_SEC:
-            conn.close()
-            return web.json_response({
-                "ok": False,
-                "error": "cooldown",
-                "next_spin_at": last_free + COOLDOWN_SEC,
-                "message": "24-часовой спин ещё не готов",
-            })
-        last_free = now
-        cur.execute(
-            "UPDATE users SET last_free_spin = ?, reminded_24h = 0 WHERE user_id = ?",
-            (last_free, uid),
-        )
+    if last_free > 0 and (now - last_free) < COOLDOWN_SEC:
+        conn.close()
+        return web.json_response({
+            "ok": False,
+            "error": "cooldown",
+            "next_spin_at": last_free + COOLDOWN_SEC,
+            "message": "Ежедневный кейс ещё на перезарядке",
+        })
 
-    prize = roll_prize_server(tier, exclude_nothing)
-    item_id = None
-    if prize in PRIZE_INFO:
+    drop = roll_from_pool(DAILY_POOL)
+    new_balance = stars_balance + int(drop["stars_amount"])
+
+    cur.execute(
+        """
+        UPDATE users
+        SET last_free_spin = ?, reminded_24h = 0, stars_balance = ?, total_spins = total_spins + 1
+        WHERE user_id = ?
+        """,
+        (now, new_balance, uid),
+    )
+
+    if drop["drop_type"] == "gift":
         item_id = f"item_{uuid.uuid4().hex[:10]}"
         cur.execute(
             "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
-            (item_id, uid, prize, now),
+            (item_id, uid, drop["prize"], now),
         )
 
     conn.commit()
@@ -525,9 +798,257 @@ async def api_spin(request: web.Request) -> web.Response:
 
     return web.json_response({
         "ok": True,
-        "prize": prize,
-        "item_id": item_id,
-        "next_spin_at": (last_free + COOLDOWN_SEC) if last_free > 0 else 0,
+        "drop": drop,
+        "stars_balance": new_balance,
+        "next_spin_at": now + COOLDOWN_SEC,
+    })
+
+
+async def api_open_paid_case(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    uid = int(tg_user["id"])
+    case_id = str(body.get("case_id", "")).strip()
+    cfg = CASES_CONFIG.get(case_id)
+    if not cfg:
+        return web.json_response({"ok": False, "message": "Кейс не найден"})
+
+    ensure_user(
+        uid,
+        (tg_user.get("username") or "").lstrip("@"),
+        tg_user.get("first_name") or "",
+    )
+
+    price = int(cfg["price"])
+    now = int(time.time())
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM pending_drops WHERE user_id = ?", (uid,))
+    for old_drop in cur.fetchall():
+        finalize_pending_drop_in_db(conn, old_drop)
+
+    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    row = cur.fetchone()
+    bal = int(row[0]) if row else 0
+    if bal < price:
+        conn.commit()
+        conn.close()
+        return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
+
+    new_bal = bal - price
+    cur.execute(
+        "UPDATE users SET stars_balance = ?, total_spins = total_spins + 1 WHERE user_id = ?",
+        (new_bal, uid),
+    )
+
+    drop = roll_from_pool(cfg["pool"])
+    drop_id = f"drop_{uuid.uuid4().hex[:10]}"
+    cur.execute(
+        """
+        INSERT INTO pending_drops (drop_id, user_id, case_id, drop_type, prize, stars_amount, rerolled, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+        """,
+        (drop_id, uid, case_id, drop["drop_type"], drop["prize"], int(drop["stars_amount"]), now),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return web.json_response({
+        "ok": True,
+        "drop_id": drop_id,
+        "case_id": case_id,
+        "drop": drop,
+        "can_reroll": True,
+        "reroll_price": REROLL_PRICE_STARS,
+        "stars_balance": new_bal,
+    })
+
+
+async def api_reroll_case_drop(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    uid = int(tg_user["id"])
+    drop_id = str(body.get("drop_id", "")).strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_drops WHERE drop_id = ? AND user_id = ?", (drop_id, uid))
+    drow = cur.fetchone()
+    if not drow:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Дроп уже зафиксирован или не найден"})
+
+    case_id = drow[2]
+    cfg = CASES_CONFIG.get(case_id)
+    if not cfg:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Кейс не найден"})
+
+    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    bal = int((cur.fetchone() or [0])[0])
+    if bal < REROLL_PRICE_STARS:
+        conn.close()
+        return web.json_response({"ok": False, "message": f"Для перекрута нужно {REROLL_PRICE_STARS} ★"})
+
+    new_bal = bal - REROLL_PRICE_STARS
+    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
+
+    new_drop = roll_from_pool(cfg["pool"])
+    cur.execute(
+        """
+        UPDATE pending_drops
+        SET drop_type = ?, prize = ?, stars_amount = ?, rerolled = rerolled + 1
+        WHERE drop_id = ?
+        """,
+        (new_drop["drop_type"], new_drop["prize"], int(new_drop["stars_amount"]), drop_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return web.json_response({
+        "ok": True,
+        "drop_id": drop_id,
+        "drop": new_drop,
+        "can_reroll": True,
+        "reroll_price": REROLL_PRICE_STARS,
+        "stars_balance": new_bal,
+    })
+
+
+async def api_accept_case_drop(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    uid = int(tg_user["id"])
+    drop_id = str(body.get("drop_id", "")).strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pending_drops WHERE drop_id = ? AND user_id = ?", (drop_id, uid))
+    drow = cur.fetchone()
+    if drow:
+        finalize_pending_drop_in_db(conn, drow)
+        conn.commit()
+
+    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    bal = int((cur.fetchone() or [0])[0])
+    conn.close()
+
+    return web.json_response({"ok": True, "stars_balance": bal})
+
+
+async def api_upgrade_spin(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    uid = int(tg_user["id"])
+    bet_stars = int(body.get("bet_stars", 0) or 0)
+    target_id = str(body.get("target_id", "")).strip()
+    target = UPGRADE_TARGETS.get(target_id)
+
+    if not target or bet_stars < 1:
+        return web.json_response({"ok": False, "message": "Укажи ставку и цель апгрейда"})
+
+    now = int(time.time())
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    bal = int((cur.fetchone() or [0])[0])
+
+    if bal < bet_stars:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
+
+    chance = min(80.0, max(1.0, round((bet_stars / max(1, target["stars"])) * 90.0, 2)))
+    roll = round(random.uniform(0.0, 100.0), 2)
+    won = roll <= chance
+
+    new_bal = bal - bet_stars
+    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, uid))
+
+    if won:
+        item_id = f"item_{uuid.uuid4().hex[:10]}"
+        cur.execute(
+            "INSERT INTO inventory (id, user_id, prize, won_at, status) VALUES (?, ?, ?, ?, 'inventory')",
+            (item_id, uid, target["id"], now),
+        )
+
+    conn.commit()
+    conn.close()
+
+    return web.json_response({
+        "ok": True,
+        "won": won,
+        "chance": chance,
+        "roll": roll,
+        "target": target,
+        "stars_balance": new_bal,
+    })
+
+
+async def api_promo_redeem(request: web.Request) -> web.Response:
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    uid = int(tg_user["id"])
+    code = str(body.get("code", "")).strip().upper()
+    if not code:
+        return web.json_response({"ok": False, "message": "Введи промокод"})
+
+    now = int(time.time())
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT reward_stars, max_uses, uses_count, active FROM promocodes WHERE code = ?",
+        (code,),
+    )
+    promo = cur.fetchone()
+    if not promo or int(promo[3]) != 1:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Промокод не найден или отключён"})
+
+    reward_stars, max_uses, uses_count = int(promo[0]), int(promo[1]), int(promo[2])
+    if uses_count >= max_uses:
+        conn.close()
+        return web.json_response({"ok": False, "message": "Лимит активаций промокода исчерпан"})
+
+    cur.execute("SELECT 1 FROM promo_activations WHERE code = ? AND user_id = ?", (code, uid))
+    if cur.fetchone():
+        conn.close()
+        return web.json_response({"ok": False, "message": "Ты уже активировал этот промокод"})
+
+    cur.execute(
+        "INSERT INTO promo_activations (code, user_id, activated_at) VALUES (?, ?, ?)",
+        (code, uid, now),
+    )
+    cur.execute("UPDATE promocodes SET uses_count = uses_count + 1 WHERE code = ?", (code,))
+    cur.execute("UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?", (reward_stars, uid))
+    cur.execute("SELECT stars_balance FROM users WHERE user_id = ?", (uid,))
+    new_bal = int((cur.fetchone() or [0])[0])
+
+    conn.commit()
+    conn.close()
+
+    return web.json_response({
+        "ok": True,
+        "reward_stars": reward_stars,
+        "stars_balance": new_bal,
+        "message": f"Промокод активирован: +{reward_stars} ★",
     })
 
 
@@ -596,16 +1117,45 @@ async def api_claim_request(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "request_id": req_id, "status": "processing"})
 
 
+# ==========================================
+# АДМИНСКИЕ HTTP ЭНДПОИНТЫ
+# ==========================================
+def check_admin(body: dict) -> int | None:
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        print("[check_admin] verify_init_data вернул None")
+        return None
+    uid = int(tg_user["id"])
+    if uid not in ADMIN_IDS:
+        print(f"[check_admin] uid={uid} не входит в ADMIN_IDS={ADMIN_IDS}")
+        return None
+    return uid
+
+
+async def api_admin_mode(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Нет прав админа или устарел initData"}, status=403)
+
+    mode = str(body.get("mode", ""))
+    enabled = bool(body.get("enabled", False))
+    try:
+        modes = set_system_mode(mode, enabled)
+        print(f"[admin_mode] mode={mode}, enabled={enabled} -> {modes}")
+        return web.json_response({"ok": True, "system_modes": modes})
+    except ValueError:
+        return web.json_response({"ok": False, "message": "Неверный режим"}, status=400)
+
+
 async def api_admin_requests(request: web.Request) -> web.Response:
     body = await request.json()
-    tg_user = verify_init_data(body.get("initData", ""))
-    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+    if not check_admin(body):
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, user_id, username, prize, status, created_at FROM claim_requests ORDER BY created_at DESC LIMIT 50"
+        "SELECT id, user_id, username, prize, status, created_at FROM claim_requests ORDER BY created_at DESC LIMIT 60"
     )
     reqs = [
         {
@@ -613,6 +1163,7 @@ async def api_admin_requests(request: web.Request) -> web.Response:
             "user_id": int(r[1]),
             "username": r[2],
             "prize": r[3],
+            "name": PRIZE_INFO.get(r[3], {}).get("name", r[3]),
             "status": r[4],
             "created_at": int(r[5]),
         }
@@ -624,8 +1175,7 @@ async def api_admin_requests(request: web.Request) -> web.Response:
 
 async def api_admin_complete(request: web.Request) -> web.Response:
     body = await request.json()
-    tg_user = verify_init_data(body.get("initData", ""))
-    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+    if not check_admin(body):
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     req_id = str(body.get("request_id", "")).strip()
@@ -638,10 +1188,89 @@ async def api_admin_complete(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "status": "done"})
 
 
+async def api_admin_delete_request(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    req_id = str(body.get("request_id", "")).strip()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM claim_requests WHERE id = ?", (req_id,))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return web.json_response({"ok": True, "deleted": deleted})
+
+
+async def api_admin_user_stars(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+    delta = int(body.get("delta", 0) or 0)
+    if not target_uname or delta == 0:
+        return web.json_response({"ok": False, "message": "Укажи @username и количество звёзд"})
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, stars_balance FROM users WHERE lower(username) = ?", (target_uname,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return web.json_response({"ok": False, "message": f"Пользователь @{target_uname} не найден в базе"})
+
+    target_uid, old_bal = int(row[0]), int(row[1])
+    new_bal = max(0, old_bal + delta)
+    cur.execute("UPDATE users SET stars_balance = ? WHERE user_id = ?", (new_bal, target_uid))
+    conn.commit()
+    conn.close()
+
+    try:
+        sign_str = f"+{delta}" if delta > 0 else f"{delta}"
+        await bot.send_message(
+            chat_id=target_uid,
+            text=f"⭐ Администратор изменил ваш баланс GiftezUp: {sign_str} ★ (текущий баланс: {new_bal} ★).",
+        )
+    except Exception:
+        pass
+
+    return web.json_response({
+        "ok": True,
+        "message": f"Баланс @{target_uname} обновлён: {new_bal} ★",
+        "stars_balance": new_bal,
+    })
+
+
+async def api_admin_reset_user_timer(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+    if not target_uname:
+        return web.json_response({"ok": False, "message": "Укажи @username игрока"})
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET last_free_spin = 0, reminded_24h = 1 WHERE lower(username) = ?",
+        (target_uname,),
+    )
+    updated = cur.rowcount
+    conn.commit()
+    conn.close()
+
+    if updated == 0:
+        return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
+
+    return web.json_response({"ok": True, "message": f"24ч таймер сброшен для @{target_uname}"})
+
+
 async def api_admin_reset_all_timers(request: web.Request) -> web.Response:
     body = await request.json()
-    tg_user = verify_init_data(body.get("initData", ""))
-    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+    if not check_admin(body):
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     conn = sqlite3.connect(DB_PATH)
@@ -650,13 +1279,37 @@ async def api_admin_reset_all_timers(request: web.Request) -> web.Response:
     updated = cur.rowcount
     conn.commit()
     conn.close()
+    print(f"[admin_reset_all] updated_users={updated}")
     return web.json_response({"ok": True, "updated_users": updated})
+
+
+async def api_admin_create_promo(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
+
+    code = str(body.get("code", "")).strip().upper()
+    reward_stars = int(body.get("reward_stars", 0) or 0)
+    max_uses = int(body.get("max_uses", 1) or 1)
+    if not code or reward_stars < 1 or max_uses < 1:
+        return web.json_response({"ok": False, "message": "Заполни код, сумму ★ и лимит"})
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO promocodes (code, reward_stars, max_uses, uses_count, active)
+        VALUES (?, ?, ?, 0, 1)
+        """,
+        (code, reward_stars, max_uses),
+    )
+    conn.commit()
+    conn.close()
+    return web.json_response({"ok": True, "message": f"Промокод {code} на {reward_stars} ★ создан"})
 
 
 async def api_admin_broadcast(request: web.Request) -> web.Response:
     body = await request.json()
-    tg_user = verify_init_data(body.get("initData", ""))
-    if not tg_user or int(tg_user["id"]) not in ADMIN_IDS:
+    if not check_admin(body):
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     text = str(body.get("text", "")).strip()
@@ -671,7 +1324,7 @@ async def api_admin_broadcast(request: web.Request) -> web.Response:
     if VERCEL_APP_URL:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть рулетку", web_app=WebAppInfo(url=VERCEL_APP_URL))]
+                [InlineKeyboardButton(text="Открыть GiftezUp", web_app=WebAppInfo(url=VERCEL_APP_URL))]
             ]
         )
 
@@ -689,20 +1342,6 @@ async def api_admin_broadcast(request: web.Request) -> web.Response:
         "failed": failed_count,
         "total": len(user_ids),
     })
-
-
-async def api_dev_reset_cooldown(request: web.Request) -> web.Response:
-    body = await request.json()
-    tg_user = verify_init_data(body.get("initData", ""))
-    if not tg_user:
-        return web.json_response({"ok": False}, status=401)
-
-    uid = int(tg_user["id"])
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE users SET last_free_spin = 0, reminded_24h = 1 WHERE user_id = ?", (uid,))
-    conn.commit()
-    conn.close()
-    return web.json_response({"ok": True})
 
 
 async def on_startup(app: web.Application) -> None:
@@ -729,18 +1368,30 @@ async def on_cleanup(app: web.Application) -> None:
 
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
-    app.router.add_get("/", lambda r: web.json_response({"ok": True, "service": "giftez"}))
+    app.router.add_get("/", lambda r: web.json_response({"ok": True, "service": "giftezup", "modes": get_system_modes()}))
     app.router.add_route("OPTIONS", "/{tail:.*}", lambda r: web.Response(status=204))
+
     app.router.add_post("/api/state", api_state)
     app.router.add_post("/api/check_sub", api_check_sub)
-    app.router.add_post("/api/create_star_invoice", api_create_star_invoice)
-    app.router.add_post("/api/spin", api_spin)
+    app.router.add_post("/api/create_topup_invoice", api_create_topup_invoice)
+    app.router.add_post("/api/spin_daily", api_spin_daily)
+    app.router.add_post("/api/open_paid_case", api_open_paid_case)
+    app.router.add_post("/api/reroll_case_drop", api_reroll_case_drop)
+    app.router.add_post("/api/accept_case_drop", api_accept_case_drop)
+    app.router.add_post("/api/upgrade_spin", api_upgrade_spin)
+    app.router.add_post("/api/promo_redeem", api_promo_redeem)
     app.router.add_post("/api/claim_request", api_claim_request)
+
+    app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/requests", api_admin_requests)
     app.router.add_post("/api/admin/complete", api_admin_complete)
+    app.router.add_post("/api/admin/delete_request", api_admin_delete_request)
+    app.router.add_post("/api/admin/user_stars", api_admin_user_stars)
+    app.router.add_post("/api/admin/reset_user_timer", api_admin_reset_user_timer)
     app.router.add_post("/api/admin/reset_all_timers", api_admin_reset_all_timers)
+    app.router.add_post("/api/admin/create_promo", api_admin_create_promo)
     app.router.add_post("/api/admin/broadcast", api_admin_broadcast)
-    app.router.add_post("/api/dev/reset_cooldown", api_dev_reset_cooldown)
+
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
