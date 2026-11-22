@@ -46,23 +46,22 @@ REROLL_PRICE_STARS = 3
 WITHDRAW_PACKS = [
     {"cost": 15,  "payout": 13, "gift": "bear",   "name": "Мишка (15 ★ → 13 ★)"},
     {"cost": 25,  "payout": 21, "gift": "rose",   "name": "Роза (25 ★ → 21 ★)"},
-    {"cost": 50,  "payout": 43, "gift": "rocket", "name": "Ракета (50 ★ → 43 ★)"},
+    {"cost": 50,  "payout": 43, "gift": "rocket", "name": "Ракета / Торт / Напиток (50 ★ → 43 ★)"},
     {"cost": 100, "payout": 85, "gift": "ring",   "name": "Кольцо (100 ★ → 85 ★)"},
 ]
 
-# Все подарки для ленты кейсов и целей апгрейдера (награда начисляется в ★ на баланс)
+# Все подарки (Торт, Ракета и Бутылка — все по 50 ★)
 GIFTS_CATALOG = {
-    "bear":   {"id": "bear",   "name": "Мишка",   "stars": 15,  "icon": "bear.png"},
-    "heart":  {"id": "heart",  "name": "Сердце",  "stars": 15,  "icon": "heart.png"},
-    "rose":   {"id": "rose",   "name": "Роза",    "stars": 25,  "icon": "rose.png"},
-    "gift":   {"id": "gift",   "name": "Коробка", "stars": 25,  "icon": "gift.png"},
-    "bottle": {"id": "bottle", "name": "Напиток", "stars": 35,  "icon": "bottle.png"},
-    "cake":   {"id": "cake",   "name": "Торт",    "stars": 40,  "icon": "cake.png"},
-    "rocket": {"id": "rocket", "name": "Ракета",  "stars": 50,  "icon": "rocket.png"},
-    "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "icon": "ring.png"},
+    "bear":   {"id": "bear",   "name": "Мишка",   "stars": 15,  "payout": 13, "icon": "bear.png"},
+    "heart":  {"id": "heart",  "name": "Сердце",  "stars": 15,  "payout": 13, "icon": "heart.png"},
+    "rose":   {"id": "rose",   "name": "Роза",    "stars": 25,  "payout": 21, "icon": "rose.png"},
+    "gift":   {"id": "gift",   "name": "Коробка", "stars": 25,  "payout": 21, "icon": "gift.png"},
+    "bottle": {"id": "bottle", "name": "Напиток", "stars": 50,  "payout": 43, "icon": "bottle.png"},
+    "cake":   {"id": "cake",   "name": "Торт",    "stars": 50,  "payout": 43, "icon": "cake.png"},
+    "rocket": {"id": "rocket", "name": "Ракета",  "stars": 50,  "payout": 43, "icon": "rocket.png"},
+    "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "payout": 85, "icon": "ring.png"},
 }
 
-# Пониженные шансы в ежедневном кейсе
 DAILY_POOL = [
     {"type": "nothing", "weight": 72.0, "label": "Ничего",  "icon": "nothing.png"},
     {"type": "stars",   "min": 1,  "max": 3,  "weight": 19.0, "label": "1–3 ★",   "icon": "star"},
@@ -71,7 +70,6 @@ DAILY_POOL = [
     {"type": "gift",    "gift": "rose",       "weight": 0.7,  "label": "Роза (25 ★)",  "icon": "rose.png"},
 ]
 
-# Конфигурация платных кейсов с пониженными шансами
 CASES_CONFIG = {
     "starter": {
         "id": "starter",
@@ -97,7 +95,7 @@ CASES_CONFIG = {
             {"type": "stars", "min": 6, "max": 12, "weight": 18.0, "label": "6–12 ★",         "icon": "star"},
             {"type": "gift",  "gift": "heart",     "weight": 4.5,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
             {"type": "gift",  "gift": "gift",      "weight": 2.5,  "label": "Коробка (25 ★)", "icon": "gift.png"},
-            {"type": "gift",  "gift": "bottle",    "weight": 1.0,  "label": "Напиток (35 ★)", "icon": "bottle.png"},
+            {"type": "gift",  "gift": "bottle",    "weight": 1.0,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
         ],
     },
     "sever": {
@@ -109,7 +107,7 @@ CASES_CONFIG = {
         "pool": [
             {"type": "stars", "min": 5,  "max": 12, "weight": 75.0, "label": "5–12 ★",         "icon": "star"},
             {"type": "stars", "min": 13, "max": 22, "weight": 17.5, "label": "13–22 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 4.5,  "label": "Торт (40 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "cake",       "weight": 4.5,  "label": "Торт (50 ★)",    "icon": "cake.png"},
             {"type": "gift",  "gift": "rocket",     "weight": 2.2,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
             {"type": "gift",  "gift": "ring",       "weight": 0.8,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
@@ -123,7 +121,7 @@ CASES_CONFIG = {
         "pool": [
             {"type": "stars", "min": 10, "max": 24, "weight": 74.0, "label": "10–24 ★",        "icon": "star"},
             {"type": "stars", "min": 25, "max": 45, "weight": 18.0, "label": "25–45 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 4.2,  "label": "Торт (40 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "cake",       "weight": 4.2,  "label": "Торт (50 ★)",    "icon": "cake.png"},
             {"type": "gift",  "gift": "rocket",     "weight": 2.6,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
             {"type": "gift",  "gift": "ring",       "weight": 1.2,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
@@ -368,18 +366,10 @@ async def is_channel_subscribed(user_id: int, force_refresh: bool = False) -> bo
     return is_sub
 
 
-# ==========================================
-# РАЗЛОЖЕНИЕ СУММЫ ВЫВОДА НА РОВНЫЕ ПАКЕТЫ (100, 50, 25, 15)
-# ==========================================
 def decompose_withdraw_amount(cost: int) -> dict | None:
-    """
-    Проверяет, можно ли представить cost в виде суммы номиналов 15, 25, 50, 100.
-    Возвращает разложение (какие подарки/номиналы и сколько звёзд к выплате) или None.
-    """
     if cost < 15:
         return None
 
-    # Перебираем комбинации так, чтобы использовать минимум пакетов
     best = None
     for c100 in range(cost // 100, -1, -1):
         rem100 = cost - c100 * 100
@@ -396,11 +386,11 @@ def decompose_withdraw_amount(cost: int) -> dict | None:
                         if c100:
                             parts.append(f"{c100}× Кольцо (100→85 ★)")
                         if c50:
-                            parts.append(f"{c50}× Ракета (50→43 ★)")
+                            parts.append(f"{c50}× Пакет 50★ (Ракета/Торт/Напиток 50→43 ★)")
                         if c25:
-                            parts.append(f"{c25}× Роза (25→21 ★)")
+                            parts.append(f"{c25}× Роза/Коробка (25→21 ★)")
                         if c15:
-                            parts.append(f"{c15}× Мишка (15→13 ★)")
+                            parts.append(f"{c15}× Мишка/Сердце (15→13 ★)")
                         best = {
                             "cost": cost,
                             "payout": payout,
@@ -412,9 +402,6 @@ def decompose_withdraw_amount(cost: int) -> dict | None:
 
 
 def suggest_nearest_withdraw_amounts(raw_amount: int, max_available: int) -> list[dict]:
-    """
-    Находит ближайшие валидные суммы вывода (кратные комбинациям 15, 25, 50, 100).
-    """
     valid = []
     upper = max(120, raw_amount + 60)
     for x in range(15, upper + 1, 5):
@@ -576,7 +563,6 @@ async def on_successful_payment(message: Message) -> None:
             uid = int(parts[1])
             stars_added = int(sp.total_amount)
             conn = sqlite3.connect(DB_PATH)
-            # Пополненные звёзды добавляются в баланс и требуют 1x отыгрыша (wager_left)
             conn.execute(
                 """
                 UPDATE users
@@ -683,7 +669,6 @@ def finalize_pending_drop_in_db(conn: sqlite3.Connection, drop_row: tuple) -> No
     cur = conn.cursor()
     amt = int(stars_amount or 0)
     if amt > 0:
-        # Выигрыш из кейса сразу идёт на баланс и не увеличивает отыгрыш
         cur.execute(
             "UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?",
             (amt, int(uid)),
@@ -945,7 +930,7 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
 
     new_bal = bal - price
-    new_wag = max(0, wag - price)  # Ставка в кейсе засчитывается в отыгрыш
+    new_wag = max(0, wag - price)
     cur.execute(
         "UPDATE users SET stars_balance = ?, wager_left = ?, total_spins = total_spins + 1 WHERE user_id = ?",
         (new_bal, new_wag, uid),
@@ -1100,12 +1085,10 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
     roll = round(random.uniform(0.0, 100.0), 2)
     won = roll <= chance
 
-    # Ставка списывается и уменьшает обязательный отыгрыш
     new_bal = bal - bet_stars
     new_wag = max(0, wag - bet_stars)
 
     if won:
-        # При победе начисляется стоимость целевого подарка в ★ на баланс
         new_bal += target_stars
 
     cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
@@ -1163,7 +1146,6 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
         (code, uid, now),
     )
     cur.execute("UPDATE promocodes SET uses_count = uses_count + 1 WHERE code = ?", (code,))
-    # Промо-звёзды также требуют 1x отыгрыша
     cur.execute(
         "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
         (reward_stars, reward_stars, uid),
@@ -1280,9 +1262,6 @@ async def api_withdraw_stars(request: web.Request) -> web.Response:
     })
 
 
-# ==========================================
-# АДМИНСКИЕ HTTP ЭНДПОИНТЫ
-# ==========================================
 def check_admin(body: dict) -> int | None:
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
