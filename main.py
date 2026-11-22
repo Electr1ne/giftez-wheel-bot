@@ -30,7 +30,6 @@ VERCEL_APP_URL = os.getenv("VERCEL_APP_URL")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 CHANNEL_CHAT_ID = os.getenv("CHANNEL_CHAT_ID")
 
-# Читаем ADMIN_IDS из .env и всегда страхуем твоим основным ID 963968579
 _env_admins = {int(x.strip()) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip().isdigit()}
 ADMIN_IDS = _env_admins | {963968579}
 
@@ -456,6 +455,15 @@ async def cmd_toggle_update(message: Message) -> None:
     cur_modes = get_system_modes()
     new_modes = set_system_mode("update", not cur_modes["update"])
     await message.answer(f"Режим обновления: {'ВКЛ' if new_modes['update'] else 'ВЫКЛ'}")
+
+
+@dp.message(Command("unlock"))
+async def cmd_unlock_all(message: Message) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    set_system_mode("maintenance", False)
+    set_system_mode("update", False)
+    await message.answer("✅ Все ограничения сняты: Техработы ВЫКЛ, Обновление ВЫКЛ.")
 
 
 @dp.message(Command("admin"))
@@ -1117,19 +1125,12 @@ async def api_claim_request(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "request_id": req_id, "status": "processing"})
 
 
-# ==========================================
-# АДМИНСКИЕ HTTP ЭНДПОИНТЫ
-# ==========================================
 def check_admin(body: dict) -> int | None:
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
-        print("[check_admin] verify_init_data вернул None")
         return None
     uid = int(tg_user["id"])
-    if uid not in ADMIN_IDS:
-        print(f"[check_admin] uid={uid} не входит в ADMIN_IDS={ADMIN_IDS}")
-        return None
-    return uid
+    return uid if uid in ADMIN_IDS else None
 
 
 async def api_admin_mode(request: web.Request) -> web.Response:
@@ -1141,7 +1142,6 @@ async def api_admin_mode(request: web.Request) -> web.Response:
     enabled = bool(body.get("enabled", False))
     try:
         modes = set_system_mode(mode, enabled)
-        print(f"[admin_mode] mode={mode}, enabled={enabled} -> {modes}")
         return web.json_response({"ok": True, "system_modes": modes})
     except ValueError:
         return web.json_response({"ok": False, "message": "Неверный режим"}, status=400)
@@ -1279,7 +1279,6 @@ async def api_admin_reset_all_timers(request: web.Request) -> web.Response:
     updated = cur.rowcount
     conn.commit()
     conn.close()
-    print(f"[admin_reset_all] updated_users={updated}")
     return web.json_response({"ok": True, "updated_users": updated})
 
 
