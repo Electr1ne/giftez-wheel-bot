@@ -63,25 +63,26 @@ GIFTS_CATALOG = {
     "ring":   {"id": "ring",   "name": "Кольцо",  "stars": 100, "payout": 85,  "icon": "ring.png"},
 }
 
+# Ежедневный: урезанные шансы
 DAILY_POOL = [
-    {"type": "nothing", "weight": 74.0, "label": "Ничего",       "icon": "nothing.png"},
-    {"type": "stars",   "min": 1, "max": 1,  "weight": 20.0, "label": "1 ★",          "icon": "star"},
-    {"type": "stars",   "min": 2, "max": 5,  "weight": 5.0,  "label": "2–5 ★",        "icon": "star"},
-    {"type": "gift",    "gift": "bear",      "weight": 0.75, "label": "Мишка (15 ★)", "icon": "bear.png"},
-    {"type": "gift",    "gift": "rose",      "weight": 0.25, "label": "Роза (25 ★)",  "icon": "rose.png"},
+    {"type": "nothing", "weight": 78.5, "label": "Ничего",       "icon": "nothing.png"},
+    {"type": "stars",   "min": 1, "max": 1,  "weight": 18.0, "label": "1 ★",          "icon": "star"},
+    {"type": "stars",   "min": 2, "max": 4,  "weight": 3.0,  "label": "2–4 ★",        "icon": "star"},
+    {"type": "gift",    "gift": "bear",      "weight": 0.4,  "label": "Мишка (15 ★)", "icon": "bear.png"},
+    {"type": "gift",    "gift": "rose",      "weight": 0.1,  "label": "Роза (25 ★)",  "icon": "rose.png"},
 ]
 
-# Этапы ледяной шкалы ивента «Снегопад»
 EVENT_STAGES = [
-    {"stage": 1, "points": 25,   "reward_stars": 3,  "title": "Первый сугроб"},
-    {"stage": 2, "points": 80,   "reward_stars": 8,  "title": "Морозный след"},
-    {"stage": 3, "points": 180,  "reward_stars": 18, "title": "Ледяной пик"},
-    {"stage": 4, "points": 350,  "reward_stars": 35, "title": "Северный ветер"},
-    {"stage": 5, "points": 650,  "reward_stars": 70, "title": "Корона снегопада"},
+    {"stage": 1, "points": 30,   "reward_stars": 3,  "title": "Первый сугроб"},
+    {"stage": 2, "points": 90,   "reward_stars": 8,  "title": "Морозный след"},
+    {"stage": 3, "points": 210,  "reward_stars": 18, "title": "Ледяной пик"},
+    {"stage": 4, "points": 420,  "reward_stars": 35, "title": "Северный ветер"},
+    {"stage": 5, "points": 750,  "reward_stars": 70, "title": "Корона снегопада"},
 ]
 
-# Конфигурация кейсов v1 (старый набор)
-CASES_V1 = {
+# Единый каталог: старые кейсы (доступны всегда) + новые зимние (появляются 1 декабря 00:00 МСК)
+ALL_CASES_CONFIG = {
+    # === СТАРЫЕ КЕЙСЫ (всегда доступны) ===
     "starter": {
         "id": "starter",
         "name": "Стартовый",
@@ -90,13 +91,14 @@ CASES_V1 = {
         "reroll_allowed": True,
         "category": "snowflakes",
         "availability": "permanent",
-        "badge": "ЗИМА",
+        "is_winter_new": False,
+        "badge": "КЛАССИКА",
         "icon": "starter.png",
         "pool": [
-            {"type": "stars", "min": 1, "max": 2, "weight": 82.0, "label": "1–2 ★",        "icon": "star"},
-            {"type": "stars", "min": 3, "max": 5, "weight": 15.0, "label": "3–5 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "bear",     "weight": 2.2,  "label": "Мишка (15 ★)", "icon": "bear.png"},
-            {"type": "gift",  "gift": "rose",     "weight": 0.8,  "label": "Роза (25 ★)",  "icon": "rose.png"},
+            {"type": "stars", "min": 1, "max": 2, "weight": 86.0, "label": "1–2 ★",        "icon": "star"},
+            {"type": "stars", "min": 3, "max": 4, "weight": 12.2, "label": "3–4 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "bear",     "weight": 1.3,  "label": "Мишка (15 ★)", "icon": "bear.png"},
+            {"type": "gift",  "gift": "rose",     "weight": 0.5,  "label": "Роза (25 ★)",  "icon": "rose.png"},
         ],
     },
     "morozniy": {
@@ -107,14 +109,15 @@ CASES_V1 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "permanent",
-        "badge": "ТОП",
+        "is_winter_new": False,
+        "badge": "КЛАССИКА",
         "icon": "morozniy.png",
         "pool": [
-            {"type": "stars", "min": 2, "max": 5,  "weight": 80.0, "label": "2–5 ★",          "icon": "star"},
-            {"type": "stars", "min": 6, "max": 11, "weight": 16.0, "label": "6–11 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "heart",     "weight": 2.5,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
-            {"type": "gift",  "gift": "gift",      "weight": 1.1,  "label": "Коробка (25 ★)", "icon": "gift.png"},
-            {"type": "gift",  "gift": "bottle",    "weight": 0.4,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
+            {"type": "stars", "min": 2, "max": 5,  "weight": 84.5, "label": "2–5 ★",          "icon": "star"},
+            {"type": "stars", "min": 6, "max": 10, "weight": 13.0, "label": "6–10 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "heart",     "weight": 1.6,  "label": "Сердце (15 ★)",  "icon": "heart.png"},
+            {"type": "gift",  "gift": "gift",      "weight": 0.65, "label": "Коробка (25 ★)", "icon": "gift.png"},
+            {"type": "gift",  "gift": "bottle",    "weight": 0.25, "label": "Напиток (50 ★)", "icon": "bottle.png"},
         ],
     },
     "sever": {
@@ -125,14 +128,15 @@ CASES_V1 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "permanent",
-        "badge": "NEW",
+        "is_winter_new": False,
+        "badge": "КЛАССИКА",
         "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 5,  "max": 12, "weight": 80.0, "label": "5–12 ★",         "icon": "star"},
-            {"type": "stars", "min": 13, "max": 22, "weight": 16.2, "label": "13–22 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 2.2,  "label": "Торт (50 ★)",    "icon": "cake.png"},
-            {"type": "gift",  "gift": "rocket",     "weight": 1.2,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
-            {"type": "gift",  "gift": "ring",       "weight": 0.4,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 5,  "max": 11, "weight": 84.5, "label": "5–11 ★",         "icon": "star"},
+            {"type": "stars", "min": 12, "max": 20, "weight": 13.2, "label": "12–20 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "cake",       "weight": 1.3,  "label": "Торт (50 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "rocket",     "weight": 0.75, "label": "Ракета (50 ★)",  "icon": "rocket.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 0.25, "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
     "newyear": {
@@ -143,21 +147,19 @@ CASES_V1 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "permanent",
-        "badge": "VIP",
+        "is_winter_new": False,
+        "badge": "КЛАССИКА",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 25,  "max": 45,  "weight": 74.0, "label": "25–45 ★",           "icon": "star"},
-            {"type": "stars", "min": 55,  "max": 85,  "weight": 19.5, "label": "55–85 ★",           "icon": "star"},
-            {"type": "stars", "min": 100, "max": 140, "weight": 4.2,  "label": "100–140 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "ring",         "weight": 1.8,  "label": "Кольцо (100 ★)",    "icon": "ring.png"},
-            {"type": "stars", "min": 200, "max": 250, "weight": 0.5,  "label": "Джекпот 200–250 ★", "icon": "star"},
+            {"type": "stars", "min": 20,  "max": 40,  "weight": 80.0, "label": "20–40 ★",           "icon": "star"},
+            {"type": "stars", "min": 45,  "max": 75,  "weight": 16.0, "label": "45–75 ★",           "icon": "star"},
+            {"type": "stars", "min": 85,  "max": 120, "weight": 2.7,  "label": "85–120 ★",          "icon": "star"},
+            {"type": "gift",  "gift": "ring",         "weight": 1.0,  "label": "Кольцо (100 ★)",    "icon": "ring.png"},
+            {"type": "stars", "min": 160, "max": 220, "weight": 0.3,  "label": "Джекпот 160–220 ★", "icon": "star"},
         ],
     },
-}
 
-# Полная линейка кейсов v2 (категории, постоянные, временные, лимитированные, до 150 ★ и «Тонкий лёд»)
-CASES_V2 = {
-    # --- Категория: Снежинки (до 10 ★) ---
+    # === НОВЫЕ ЗИМНИЕ КЕЙСЫ (скрыты до 1 декабря 00:00 МСК) ===
     "iney": {
         "id": "iney",
         "name": "Иней",
@@ -166,29 +168,14 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "snowflakes",
         "availability": "permanent",
+        "is_winter_new": True,
+        "starts_at": EVENT_START_TS,
         "badge": "ДО 10 ★",
         "icon": "starter.png",
         "pool": [
-            {"type": "stars", "min": 1, "max": 2, "weight": 84.0, "label": "1–2 ★",        "icon": "star"},
-            {"type": "stars", "min": 3, "max": 4, "weight": 14.2, "label": "3–4 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "bear",     "weight": 1.8,  "label": "Мишка (15 ★)", "icon": "bear.png"},
-        ],
-    },
-    "starter": {
-        "id": "starter",
-        "name": "Снежок",
-        "price": 5,
-        "reroll_price": 3,
-        "reroll_allowed": True,
-        "category": "snowflakes",
-        "availability": "permanent",
-        "badge": "ЗИМА",
-        "icon": "starter.png",
-        "pool": [
-            {"type": "stars", "min": 1, "max": 2, "weight": 82.0, "label": "1–2 ★",        "icon": "star"},
-            {"type": "stars", "min": 3, "max": 5, "weight": 15.0, "label": "3–5 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "bear",     "weight": 2.2,  "label": "Мишка (15 ★)", "icon": "bear.png"},
-            {"type": "gift",  "gift": "rose",     "weight": 0.8,  "label": "Роза (25 ★)",  "icon": "rose.png"},
+            {"type": "stars", "min": 1, "max": 2, "weight": 88.0, "label": "1–2 ★",        "icon": "star"},
+            {"type": "stars", "min": 3, "max": 4, "weight": 11.0, "label": "3–4 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "bear",     "weight": 1.0,  "label": "Мишка (15 ★)", "icon": "bear.png"},
         ],
     },
     "icicle": {
@@ -199,13 +186,15 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "snowflakes",
         "availability": "permanent",
+        "is_winter_new": True,
+        "starts_at": EVENT_START_TS,
         "badge": "ЗИМА",
         "icon": "morozniy.png",
         "pool": [
-            {"type": "stars", "min": 2, "max": 4, "weight": 81.0, "label": "2–4 ★",         "icon": "star"},
-            {"type": "stars", "min": 5, "max": 9, "weight": 16.0, "label": "5–9 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "heart",    "weight": 2.1,  "label": "Сердце (15 ★)", "icon": "heart.png"},
-            {"type": "gift",  "gift": "rose",     "weight": 0.9,  "label": "Роза (25 ★)",   "icon": "rose.png"},
+            {"type": "stars", "min": 2, "max": 4, "weight": 85.0, "label": "2–4 ★",         "icon": "star"},
+            {"type": "stars", "min": 5, "max": 8, "weight": 13.2, "label": "5–8 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "heart",    "weight": 1.3,  "label": "Сердце (15 ★)", "icon": "heart.png"},
+            {"type": "gift",  "gift": "rose",     "weight": 0.5,  "label": "Роза (25 ★)",   "icon": "rose.png"},
         ],
     },
     "ldinka": {
@@ -216,17 +205,17 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "snowflakes",
         "availability": "permanent",
-        "badge": "ХИТ",
+        "is_winter_new": True,
+        "starts_at": EVENT_START_TS,
+        "badge": "ЗИМА",
         "icon": "morozniy.png",
         "pool": [
-            {"type": "stars", "min": 2, "max": 5,  "weight": 79.0, "label": "2–5 ★",          "icon": "star"},
-            {"type": "stars", "min": 6, "max": 11, "weight": 17.2, "label": "6–11 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "bear",      "weight": 2.4,  "label": "Мишка (15 ★)",   "icon": "bear.png"},
-            {"type": "gift",  "gift": "gift",      "weight": 1.4,  "label": "Коробка (25 ★)", "icon": "gift.png"},
+            {"type": "stars", "min": 2, "max": 5,  "weight": 84.0, "label": "2–5 ★",          "icon": "star"},
+            {"type": "stars", "min": 6, "max": 10, "weight": 13.8, "label": "6–10 ★",         "icon": "star"},
+            {"type": "gift",  "gift": "bear",      "weight": 1.5,  "label": "Мишка (15 ★)",   "icon": "bear.png"},
+            {"type": "gift",  "gift": "gift",      "weight": 0.7,  "label": "Коробка (25 ★)", "icon": "gift.png"},
         ],
     },
-
-    # --- Категория: Сугробы (15 – 50 ★) ---
     "first_snow": {
         "id": "first_snow",
         "name": "Первый снег",
@@ -235,15 +224,16 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "timed",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
         "ends_at": EVENT_START_TS + 14 * 86400,
         "badge": "ВРЕМЕННЫЙ",
         "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 4,  "max": 8,  "weight": 78.0, "label": "4–8 ★",          "icon": "star"},
-            {"type": "stars", "min": 9,  "max": 16, "weight": 17.5, "label": "9–16 ★",         "icon": "star"},
-            {"type": "gift",  "gift": "rose",       "weight": 3.2,  "label": "Роза (25 ★)",    "icon": "rose.png"},
-            {"type": "gift",  "gift": "cake",       "weight": 1.3,  "label": "Торт (50 ★)",    "icon": "cake.png"},
+            {"type": "stars", "min": 4,  "max": 8,  "weight": 83.0, "label": "4–8 ★",       "icon": "star"},
+            {"type": "stars", "min": 9,  "max": 15, "weight": 14.5, "label": "9–15 ★",      "icon": "star"},
+            {"type": "gift",  "gift": "rose",       "weight": 1.8,  "label": "Роза (25 ★)", "icon": "rose.png"},
+            {"type": "gift",  "gift": "cake",       "weight": 0.7,  "label": "Торт (50 ★)", "icon": "cake.png"},
         ],
     },
     "snow_chest": {
@@ -254,15 +244,16 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "limited",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
-        "max_opens": 150,
+        "default_max_opens": 150,
         "badge": "ЛИМИТ",
         "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 6,  "max": 12, "weight": 76.0, "label": "6–12 ★",         "icon": "star"},
-            {"type": "stars", "min": 13, "max": 24, "weight": 18.5, "label": "13–24 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "gift",       "weight": 3.5,  "label": "Коробка (25 ★)", "icon": "gift.png"},
-            {"type": "gift",  "gift": "rocket",     "weight": 2.0,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
+            {"type": "stars", "min": 5,  "max": 11, "weight": 82.0, "label": "5–11 ★",         "icon": "star"},
+            {"type": "stars", "min": 12, "max": 22, "weight": 15.0, "label": "12–22 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "gift",       "weight": 2.0,  "label": "Коробка (25 ★)", "icon": "gift.png"},
+            {"type": "gift",  "gift": "rocket",     "weight": 1.0,  "label": "Ракета (50 ★)",  "icon": "rocket.png"},
         ],
     },
     "blizzard": {
@@ -273,13 +264,15 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "permanent",
+        "is_winter_new": True,
+        "starts_at": EVENT_START_TS,
         "badge": "ПОСТОЯННЫЙ",
         "icon": "sever.png",
         "pool": [
-            {"type": "stars", "min": 12, "max": 22, "weight": 77.0, "label": "12–22 ★",        "icon": "star"},
-            {"type": "stars", "min": 23, "max": 38, "weight": 17.5, "label": "23–38 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "cake",       "weight": 3.8,  "label": "Торт (50 ★)",    "icon": "cake.png"},
-            {"type": "gift",  "gift": "ring",       "weight": 1.7,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 10, "max": 20, "weight": 82.0, "label": "10–20 ★",        "icon": "star"},
+            {"type": "stars", "min": 21, "max": 35, "weight": 15.2, "label": "21–35 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "cake",       "weight": 2.0,  "label": "Торт (50 ★)",    "icon": "cake.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 0.8,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
     "winter_safe": {
@@ -290,19 +283,18 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "drifts",
         "availability": "limited",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
-        "max_opens": 80,
+        "default_max_opens": 80,
         "badge": "ЛИМИТ",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 18, "max": 30, "weight": 75.0, "label": "18–30 ★",        "icon": "star"},
-            {"type": "stars", "min": 31, "max": 52, "weight": 18.5, "label": "31–52 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "bottle",     "weight": 4.2,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
-            {"type": "gift",  "gift": "ring",       "weight": 2.3,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 15, "max": 28, "weight": 81.0, "label": "15–28 ★",        "icon": "star"},
+            {"type": "stars", "min": 29, "max": 48, "weight": 15.5, "label": "29–48 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "bottle",     "weight": 2.3,  "label": "Напиток (50 ★)", "icon": "bottle.png"},
+            {"type": "gift",  "gift": "ring",       "weight": 1.2,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
         ],
     },
-
-    # --- Категория: Северное сияние (60 – 150 ★) ---
     "pre_newyear": {
         "id": "pre_newyear",
         "name": "Предновогодний",
@@ -311,15 +303,16 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "aurora",
         "availability": "timed",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
         "ends_at": EVENT_END_TS,
         "badge": "СЕЗОН",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 25, "max": 45,  "weight": 74.0, "label": "25–45 ★",        "icon": "star"},
-            {"type": "stars", "min": 46, "max": 75,  "weight": 19.0, "label": "46–75 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "ring",        "weight": 5.2,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
-            {"type": "stars", "min": 110, "max": 150,"weight": 1.8,  "label": "110–150 ★",      "icon": "star"},
+            {"type": "stars", "min": 22, "max": 42,  "weight": 80.5, "label": "22–42 ★",        "icon": "star"},
+            {"type": "stars", "min": 44, "max": 68,  "weight": 16.0, "label": "44–68 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "ring",        "weight": 2.7,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 100, "max": 135,"weight": 0.8,  "label": "100–135 ★",      "icon": "star"},
         ],
     },
     "abs_zero": {
@@ -330,13 +323,15 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "aurora",
         "availability": "permanent",
+        "is_winter_new": True,
+        "starts_at": EVENT_START_TS,
         "badge": "VIP",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 35, "max": 58,  "weight": 74.0, "label": "35–58 ★",        "icon": "star"},
-            {"type": "stars", "min": 60, "max": 92,  "weight": 18.5, "label": "60–92 ★",        "icon": "star"},
-            {"type": "gift",  "gift": "ring",        "weight": 5.5,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
-            {"type": "stars", "min": 130, "max": 180,"weight": 2.0,  "label": "130–180 ★",      "icon": "star"},
+            {"type": "stars", "min": 30, "max": 52,  "weight": 80.0, "label": "30–52 ★",        "icon": "star"},
+            {"type": "stars", "min": 55, "max": 85,  "weight": 16.2, "label": "55–85 ★",        "icon": "star"},
+            {"type": "gift",  "gift": "ring",        "weight": 2.8,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 120, "max": 165,"weight": 1.0,  "label": "120–165 ★",      "icon": "star"},
         ],
     },
     "winter_crown": {
@@ -347,15 +342,16 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "aurora",
         "availability": "limited",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
-        "max_opens": 35,
+        "default_max_opens": 35,
         "badge": "ЛИМИТ",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 50,  "max": 80,  "weight": 73.0, "label": "50–80 ★",        "icon": "star"},
-            {"type": "stars", "min": 85,  "max": 130, "weight": 19.0, "label": "85–130 ★",       "icon": "star"},
-            {"type": "gift",  "gift": "ring",         "weight": 6.0,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
-            {"type": "stars", "min": 180, "max": 240, "weight": 2.0,  "label": "180–240 ★",      "icon": "star"},
+            {"type": "stars", "min": 42,  "max": 72,  "weight": 79.5, "label": "42–72 ★",        "icon": "star"},
+            {"type": "stars", "min": 75,  "max": 115, "weight": 16.5, "label": "75–115 ★",       "icon": "star"},
+            {"type": "gift",  "gift": "ring",         "weight": 3.0,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 160, "max": 220, "weight": 1.0,  "label": "160–220 ★",      "icon": "star"},
         ],
     },
     "ice_throne": {
@@ -366,19 +362,18 @@ CASES_V2 = {
         "reroll_allowed": True,
         "category": "aurora",
         "availability": "limited",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
-        "max_opens": 20,
+        "default_max_opens": 20,
         "badge": "150 ★ MAX",
         "icon": "newyear.png",
         "pool": [
-            {"type": "stars", "min": 75,  "max": 115, "weight": 72.0, "label": "75–115 ★",       "icon": "star"},
-            {"type": "stars", "min": 120, "max": 185, "weight": 20.0, "label": "120–185 ★",      "icon": "star"},
-            {"type": "gift",  "gift": "ring",         "weight": 5.5,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
-            {"type": "stars", "min": 250, "max": 330, "weight": 2.5,  "label": "250–330 ★",      "icon": "star"},
+            {"type": "stars", "min": 65,  "max": 105, "weight": 79.0, "label": "65–105 ★",       "icon": "star"},
+            {"type": "stars", "min": 110, "max": 165, "weight": 16.8, "label": "110–165 ★",      "icon": "star"},
+            {"type": "gift",  "gift": "ring",         "weight": 3.0,  "label": "Кольцо (100 ★)", "icon": "ring.png"},
+            {"type": "stars", "min": 220, "max": 300, "weight": 1.2,  "label": "220–300 ★",      "icon": "star"},
         ],
     },
-
-    # --- Спец-кейс: Тонкий лёд (без перекрута, особая анимация, Ничего / 1 ★ / x2) ---
     "thin_ice": {
         "id": "thin_ice",
         "name": "Тонкий лёд",
@@ -388,14 +383,15 @@ CASES_V2 = {
         "special_mode": "thin_ice",
         "category": "thin_ice",
         "availability": "limited",
+        "is_winter_new": True,
         "starts_at": EVENT_START_TS,
-        "max_opens": 60,
+        "default_max_opens": 60,
         "badge": "БЕЗ ПЕРЕКРУТА",
         "icon": "sever.png",
         "pool": [
-            {"type": "nothing", "weight": 65.0, "label": "Ничего",    "icon": "nothing.png"},
-            {"type": "stars",   "min": 1,   "max": 1,   "weight": 23.0, "label": "1 ★",       "icon": "star"},
-            {"type": "stars",   "min": 100, "max": 100, "weight": 12.0, "label": "100 ★ (x2)", "icon": "star"},
+            {"type": "nothing", "weight": 71.0, "label": "Ничего",     "icon": "nothing.png"},
+            {"type": "stars",   "min": 1,   "max": 1,   "weight": 21.0, "label": "1 ★",        "icon": "star"},
+            {"type": "stars",   "min": 100, "max": 100, "weight": 8.0,  "label": "100 ★ (x2)", "icon": "star"},
         ],
     },
 }
@@ -464,11 +460,18 @@ def init_db() -> None:
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('ui_admin_version', 'v2')")
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS case_opens (
+        CREATE TABLE IF NOT EXISTS case_stock (
             case_id TEXT PRIMARY KEY,
-            opens_count INTEGER DEFAULT 0
+            opens_count INTEGER DEFAULT 0,
+            max_opens INTEGER DEFAULT 50
         )
     """)
+    for cid, cfg in ALL_CASES_CONFIG.items():
+        if cfg.get("availability") == "limited":
+            cur.execute(
+                "INSERT OR IGNORE INTO case_stock (case_id, opens_count, max_opens) VALUES (?, 0, ?)",
+                (cid, int(cfg.get("default_max_opens", 50))),
+            )
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS withdraw_requests (
@@ -577,6 +580,16 @@ def is_event_unlocked_for_user(uid: int, now_ts: int | None = None) -> bool:
     if uid in ADMIN_IDS and resolve_user_ui_version(uid) == "v2":
         return True
     return False
+
+
+def is_case_visible_for_user(cfg: dict, uid: int, now_ts: int) -> bool:
+    """Новые кейсы скрыты в меню до 1 декабря 00:00 МСК (кроме админа в режиме v2)."""
+    if not cfg.get("is_winter_new"):
+        return True
+    ends_at = int(cfg.get("ends_at", 0) or 0)
+    if ends_at > 0 and now_ts >= ends_at:
+        return False
+    return is_event_unlocked_for_user(uid, now_ts)
 
 
 def ensure_user(user_id: int, username: str, first_name: str) -> None:
@@ -855,7 +868,7 @@ async def cmd_admin(message: Message) -> None:
         "⚙️ Пульт управления версиями дизайна GiftezUp:\n"
         f"• Твой вид (ADMIN): <b>{modes['ui_admin_version'].upper()}</b>\n"
         f"• Вид для всех игроков: <b>{modes['ui_public_version'].upper()}</b>\n"
-        "• Старт зимнего ивента: <b>1 декабря 00:00 МСК (UTC+3)</b>",
+        "• Новые кейсы и ивент откроются: <b>1 декабря 00:00 МСК (UTC+3)</b>",
         parse_mode="HTML",
         reply_markup=build_admin_kb(modes),
     )
@@ -899,7 +912,7 @@ async def on_toggle_ui_cb(callback: CallbackQuery) -> None:
         "⚙️ Пульт управления версиями дизайна GiftezUp:\n"
         f"• Твой вид (ADMIN): <b>{new_modes['ui_admin_version'].upper()}</b>\n"
         f"• Вид для всех игроков: <b>{new_modes['ui_public_version'].upper()}</b>\n"
-        "• Старт зимнего ивента: <b>1 декабря 00:00 МСК (UTC+3)</b>",
+        "• Новые кейсы и ивент откроются: <b>1 декабря 00:00 МСК (UTC+3)</b>",
         parse_mode="HTML",
         reply_markup=build_admin_kb(new_modes),
     )
@@ -1054,19 +1067,11 @@ def add_event_points(conn: sqlite3.Connection, uid: int, pts: int) -> None:
     conn.execute("UPDATE users SET event_points = event_points + ? WHERE user_id = ?", (pts, uid))
 
 
-def get_active_cases_map(uid: int, modes: dict) -> dict:
-    ver = resolve_user_ui_version(uid, modes)
-    return CASES_V2 if ver == "v2" else CASES_V1
-
-
-def build_cases_public_list(conn: sqlite3.Connection, uid: int, modes: dict) -> list[dict]:
+def build_cases_public_list(conn: sqlite3.Connection, uid: int) -> list[dict]:
     now = int(time.time())
-    event_unlocked = is_event_unlocked_for_user(uid, now)
-    cases_map = get_active_cases_map(uid, modes)
-
     cur = conn.cursor()
-    cur.execute("SELECT case_id, opens_count FROM case_opens")
-    opens_map = dict(cur.fetchall())
+    cur.execute("SELECT case_id, opens_count, max_opens FROM case_stock")
+    stock_map = {r[0]: (int(r[1]), int(r[2])) for r in cur.fetchall()}
 
     result = [
         {
@@ -1080,7 +1085,7 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int, modes: dict) -> 
             "reroll_allowed": False,
             "category": "daily",
             "availability": "permanent",
-            "is_locked": False,
+            "is_winter_new": False,
             "is_sold_out": False,
             "items": [
                 {"label": x["label"], "type": x["type"], "gift": x.get("gift", ""), "icon": x.get("icon", "star")}
@@ -1089,25 +1094,23 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int, modes: dict) -> 
         }
     ]
 
-    for cid, cfg in cases_map.items():
+    for cid, cfg in ALL_CASES_CONFIG.items():
+        if not is_case_visible_for_user(cfg, uid, now):
+            continue
+
         avail = cfg.get("availability", "permanent")
         starts_at = int(cfg.get("starts_at", 0) or 0)
         ends_at = int(cfg.get("ends_at", 0) or 0)
-        max_opens = cfg.get("max_opens")
-        opens_count = int(opens_map.get(cid, 0))
 
-        is_locked = False
-        if starts_at > now and not event_unlocked:
-            is_locked = True
-        if ends_at > 0 and now >= ends_at:
-            is_locked = True
-
+        max_opens = None
+        opens_count = 0
         remaining = None
         is_sold_out = False
-        if max_opens is not None:
-            remaining = max(0, int(max_opens) - opens_count)
-            if remaining <= 0:
-                is_sold_out = True
+
+        if avail == "limited":
+            opens_count, max_opens = stock_map.get(cid, (0, int(cfg.get("default_max_opens", 50))))
+            remaining = max(0, max_opens - opens_count)
+            is_sold_out = remaining <= 0
 
         result.append({
             "id": cfg["id"],
@@ -1121,12 +1124,12 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int, modes: dict) -> 
             "special_mode": cfg.get("special_mode", "wheel"),
             "category": cfg.get("category", "snowflakes"),
             "availability": avail,
+            "is_winter_new": bool(cfg.get("is_winter_new", False)),
             "starts_at": starts_at,
             "ends_at": ends_at,
             "max_opens": max_opens,
             "opens_count": opens_count,
             "remaining": remaining,
-            "is_locked": is_locked,
             "is_sold_out": is_sold_out,
             "items": [
                 {"label": x["label"], "type": x["type"], "gift": x.get("gift", ""), "icon": x.get("icon", "star")}
@@ -1189,7 +1192,7 @@ async def api_state(request: web.Request) -> web.Response:
         for r in cur.fetchall()
     ]
 
-    cases_public = build_cases_public_list(conn, uid, modes)
+    cases_public = build_cases_public_list(conn, uid)
     conn.close()
 
     return web.json_response({
@@ -1319,26 +1322,17 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
 
     uid = int(tg_user["id"])
     case_id = str(body.get("case_id", "")).strip()
-    modes = get_system_modes()
-    cases_map = get_active_cases_map(uid, modes)
-    cfg = cases_map.get(case_id)
-    if not cfg:
-        return web.json_response({"ok": False, "message": "Кейс не найден"})
-
+    cfg = ALL_CASES_CONFIG.get(case_id)
     now = int(time.time())
-    starts_at = int(cfg.get("starts_at", 0) or 0)
-    ends_at = int(cfg.get("ends_at", 0) or 0)
-    if starts_at > now and not is_event_unlocked_for_user(uid, now):
-        return web.json_response({"ok": False, "message": "Кейс откроется 1 декабря в 00:00 МСК"})
-    if ends_at > 0 and now >= ends_at:
-        return web.json_response({"ok": False, "message": "Время действия кейса завершилось"})
+    if not cfg or not is_case_visible_for_user(cfg, uid, now):
+        return web.json_response({"ok": False, "message": "Кейс пока недоступен"})
 
     ensure_user(uid, (tg_user.get("username") or "").lstrip("@"), tg_user.get("first_name") or "")
 
     price = int(cfg["price"])
     reroll_allowed = bool(cfg.get("reroll_allowed", True))
     reroll_price = int(cfg.get("reroll_price", 0)) if reroll_allowed else 0
-    max_opens = cfg.get("max_opens")
+    is_limited = cfg.get("availability") == "limited"
 
     conn = sqlite3.connect(DB_PATH)
     conn.isolation_level = None
@@ -1350,14 +1344,18 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         for old_drop in cur.fetchall():
             finalize_pending_drop_in_db(conn, old_drop)
 
-        if max_opens is not None:
-            cur.execute("INSERT OR IGNORE INTO case_opens (case_id, opens_count) VALUES (?, 0)", (case_id,))
-            cur.execute("SELECT opens_count FROM case_opens WHERE case_id = ?", (case_id,))
-            cur_opens = int((cur.fetchone() or (0,))[0])
-            if cur_opens >= int(max_opens):
+        remaining = None
+        max_opens_val = None
+        cur_opens = 0
+        if is_limited:
+            cur.execute("SELECT opens_count, max_opens FROM case_stock WHERE case_id = ?", (case_id,))
+            st_row = cur.fetchone()
+            cur_opens = int(st_row[0]) if st_row else 0
+            max_opens_val = int(st_row[1]) if st_row else int(cfg.get("default_max_opens", 50))
+            if cur_opens >= max_opens_val:
                 cur.execute("ROLLBACK")
                 conn.close()
-                return web.json_response({"ok": False, "message": "Кейс раскуплен (лимит исчерпан)"})
+                return web.json_response({"ok": False, "message": "Кейс раскуплен (запас закончился)"})
 
         cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
         row = cur.fetchone()
@@ -1368,8 +1366,9 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
             conn.close()
             return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
 
-        if max_opens is not None:
-            cur.execute("UPDATE case_opens SET opens_count = opens_count + 1 WHERE case_id = ?", (case_id,))
+        if is_limited:
+            cur.execute("UPDATE case_stock SET opens_count = opens_count + 1 WHERE case_id = ?", (case_id,))
+            remaining = max(0, max_opens_val - (cur_opens + 1))
 
         new_bal = bal - price
         new_wag = max(0, wag - price)
@@ -1382,7 +1381,6 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         drop = roll_from_pool(cfg["pool"])
         drop_id = f"drop_{uuid.uuid4().hex[:10]}"
 
-        # Если перекрут запрещён (например «Тонкий лёд»), сразу фиксируем выигрыш на баланс
         if not reroll_allowed:
             amt = int(drop["stars_amount"] or 0)
             if amt > 0:
@@ -1397,12 +1395,6 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
                 """,
                 (drop_id, uid, case_id, drop["drop_type"], drop["gift_id"], int(drop["stars_amount"]), drop["label"], drop["icon"], now),
             )
-
-        remaining = None
-        if max_opens is not None:
-            cur.execute("SELECT opens_count FROM case_opens WHERE case_id = ?", (case_id,))
-            now_opens = int((cur.fetchone() or (0,))[0])
-            remaining = max(0, int(max_opens) - now_opens)
 
         cur.execute("COMMIT")
     except Exception as e:
@@ -1420,6 +1412,7 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         "can_reroll": reroll_allowed,
         "reroll_price": reroll_price,
         "remaining": remaining,
+        "max_opens": max_opens_val,
         "stars_balance": balances["stars_balance"],
         "wager_left": balances["wager_left"],
         "withdrawable_stars": balances["withdrawable_stars"],
@@ -1434,8 +1427,6 @@ async def api_reroll_case_drop(request: web.Request) -> web.Response:
 
     uid = int(tg_user["id"])
     drop_id = str(body.get("drop_id", "")).strip()
-    modes = get_system_modes()
-    cases_map = get_active_cases_map(uid, modes)
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1446,7 +1437,7 @@ async def api_reroll_case_drop(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Дроп уже зафиксирован или не найден"})
 
     case_id = drow[2]
-    cfg = cases_map.get(case_id) or CASES_V2.get(case_id) or CASES_V1.get(case_id)
+    cfg = ALL_CASES_CONFIG.get(case_id)
     if not cfg or not cfg.get("reroll_allowed", True):
         conn.close()
         return web.json_response({"ok": False, "message": "Перекрут для этого кейса отключён"})
@@ -1548,7 +1539,7 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
 
-    chance = min(75.0, max(1.0, round((bet_stars / max(1, target_stars)) * 84.0, 2)))
+    chance = min(70.0, max(1.0, round((bet_stars / max(1, target_stars)) * 78.0, 2)))
     roll = round(random.uniform(0.0, 100.0), 2)
     won = roll <= chance
 
@@ -1576,7 +1567,6 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
 
 
 async def api_avalanche_play(request: web.Request) -> web.Response:
-    """Раунд мини-игры «Лавина»: расчёт максимального множителя и проверка выхода игрока."""
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
@@ -1602,13 +1592,12 @@ async def api_avalanche_play(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
 
-    # Генерация точки схода лавины с преимуществом заведения ~8%
     u = random.random()
-    if u < 0.08:
+    if u < 0.11:
         crash_mult = 1.00
     else:
-        raw_c = 0.92 / max(0.01, (1.0 - u))
-        crash_mult = round(min(30.0, max(1.01, raw_c)), 2)
+        raw_c = 0.89 / max(0.01, (1.0 - u))
+        crash_mult = round(min(25.0, max(1.01, raw_c)), 2)
 
     won = crash_mult >= target_mult
     payout = int(round(bet * target_mult)) if won else 0
@@ -1876,6 +1865,42 @@ async def api_admin_ui_version(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Неверные параметры версии"}, status=400)
 
 
+async def api_admin_restock_case(request: web.Request) -> web.Response:
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+    case_id = str(body.get("case_id", "")).strip()
+    add_amount = int(body.get("add_amount", 0) or 0)
+    cfg = ALL_CASES_CONFIG.get(case_id)
+    if not cfg or cfg.get("availability") != "limited":
+        return web.json_response({"ok": False, "message": "Выбери лимитированный кейс"})
+    if add_amount < 1 or add_amount > 10000:
+        return web.json_response({"ok": False, "message": "Укажи количество от 1 до 10 000"})
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO case_stock (case_id, opens_count, max_opens) VALUES (?, 0, ?)",
+        (case_id, int(cfg.get("default_max_opens", 50))),
+    )
+    cur.execute("UPDATE case_stock SET max_opens = max_opens + ? WHERE case_id = ?", (add_amount, case_id))
+    cur.execute("SELECT opens_count, max_opens FROM case_stock WHERE case_id = ?", (case_id,))
+    row = cur.fetchone()
+    conn.commit()
+    conn.close()
+
+    opens_c, max_o = int(row[0]), int(row[1])
+    rem = max(0, max_o - opens_c)
+    return web.json_response({
+        "ok": True,
+        "case_id": case_id,
+        "remaining": rem,
+        "max_opens": max_o,
+        "message": f"Запас «{cfg['name']}» пополнен на +{add_amount} шт. (осталось {rem} из {max_o})",
+    })
+
+
 async def api_admin_requests(request: web.Request) -> web.Response:
     body = await request.json()
     if not check_admin(body):
@@ -2116,6 +2141,7 @@ def create_app() -> web.Application:
 
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)
+    app.router.add_post("/api/admin/restock_case", api_admin_restock_case)
     app.router.add_post("/api/admin/requests", api_admin_requests)
     app.router.add_post("/api/admin/complete", api_admin_complete)
     app.router.add_post("/api/admin/delete_request", api_admin_delete_request)
