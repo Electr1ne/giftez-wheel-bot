@@ -45,6 +45,11 @@ SUB_CACHE_TTL_SEC = 60
 EVENT_START_TS = 1796072400
 EVENT_END_TS = 1798750800  # 1 января 2027, 00:00:00 МСК
 
+# Параметры общего цикла игры «Лавина»
+AV_WAIT_SEC = 5.0
+AV_CRASH_PAUSE_SEC = 3.0
+AV_SLOT_LEN = 24.0
+
 WITHDRAW_PACKS = [
     {"cost": 15,  "payout": 13, "gift": "bear",   "name": "Мишка (15 ★ → 13 ★)"},
     {"cost": 25,  "payout": 21, "gift": "rose",   "gift_alt": "gift", "name": "Роза (25 ★ → 21 ★)"},
@@ -81,9 +86,8 @@ EVENT_STAGES = [
     {"stage": 5, "points": 1600, "reward_stars": 50, "title": "Повелитель вьюги"},
 ]
 
-# Единый каталог кейсов: старые + новые зимние (появляются 1 декабря 00:00 МСК), шансы сильно урезаны
+# Единый каталог кейсов
 ALL_CASES_CONFIG = {
-    # === СТАРЫЕ КЕЙСЫ ===
     "starter": {
         "id": "starter",
         "name": "Стартовый",
@@ -159,8 +163,6 @@ ALL_CASES_CONFIG = {
             {"type": "stars", "min": 140, "max": 190, "weight": 0.15, "label": "Джекпот 140–190 ★", "icon": "star"},
         ],
     },
-
-    # === НОВЫЕ ЗИМНИЕ КЕЙСЫ (скрыты до 1 декабря 00:00 МСК, у каждого своя картинка и урезанные шансы) ===
     "iney": {
         "id": "iney",
         "name": "Иней",
@@ -459,6 +461,8 @@ def init_db() -> None:
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('update_mode', '0')")
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('ui_public_version', 'v1')")
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('ui_admin_version', 'v2')")
+    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('event_snowflakes_enabled', '1')")
+    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('avalanche_history_reset_at', '0')")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS case_stock (
@@ -474,14 +478,50 @@ def init_db() -> None:
                 (cid, int(cfg.get("default_max_opens", 50))),
             )
 
+    # Бесплатные открытия кейсов у игроков
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS avalanche_rounds (
-            round_id TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS user_free_cases (
             user_id INTEGER NOT NULL,
-            bet_stars INTEGER NOT NULL,
+            case_id TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY (user_id, case_id)
+        )
+    """)
+
+    # Общие раунды игры «Лавина»
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS avalanche_shared_rounds (
+            round_id TEXT PRIMARY KEY,
+            epoch_idx INTEGER NOT NULL,
             crash_mult REAL NOT NULL,
+            started_at INTEGER NOT NULL,
+            finalized INTEGER DEFAULT 0
+        )
+    """)
+
+    # Ставки реальных игроков в раундах «Лавины»
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS avalanche_bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            round_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            username TEXT DEFAULT '',
+            bet_stars INTEGER NOT NULL,
             auto_mult REAL DEFAULT 0,
-            status TEXT DEFAULT 'active',
+            status TEXT DEFAULT 'playing',
+            cashout_mult REAL DEFAULT 0,
+            payout INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(round_id, user_id)
+        )
+    """)
+
+    # История завершённых иксов «Лавины»
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS avalanche_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            round_id TEXT UNIQUE NOT NULL,
+            crash_mult REAL NOT NULL,
             created_at INTEGER NOT NULL
         )
     """)
@@ -502,12 +542,25 @@ def init_db() -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS promocodes (
             code TEXT PRIMARY KEY,
-            reward_stars INTEGER NOT NULL,
-            max_uses INTEGER NOT NULL,
+            reward_stars INTEGER NOT NULL DEFAULT 0,
+            max_uses INTEGER NOT NULL DEFAULT 1,
             uses_count INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            reward_type TEXT DEFAULT 'stars',
+            case_id TEXT DEFAULT '',
+            reward_cases INTEGER DEFAULT 0
         )
     """)
+    cur.execute("PRAGMA table_info(promocodes)")
+    promo_cols = {row[1] for row in cur.fetchall()}
+    for col_sql in [
+        "ALTER TABLE promocodes ADD COLUMN reward_type TEXT DEFAULT 'stars'",
+        "ALTER TABLE promocodes ADD COLUMN case_id TEXT DEFAULT ''",
+        "ALTER TABLE promocodes ADD COLUMN reward_cases INTEGER DEFAULT 0",
+    ]:
+        col_name = col_sql.split("ADD COLUMN ")[1].split()[0]
+        if col_name not in promo_cols:
+            cur.execute(col_sql)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS promo_activations (
@@ -542,7 +595,13 @@ def get_system_modes() -> dict:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT key, value FROM app_settings WHERE key IN ('maintenance_mode', 'update_mode', 'ui_public_version', 'ui_admin_version')"
+        """
+        SELECT key, value FROM app_settings
+        WHERE key IN (
+            'maintenance_mode', 'update_mode', 'ui_public_version',
+            'ui_admin_version', 'event_snowflakes_enabled', 'avalanche_history_reset_at'
+        )
+        """
     )
     rows = dict(cur.fetchall())
     conn.close()
@@ -551,6 +610,8 @@ def get_system_modes() -> dict:
         "update": rows.get("update_mode", "0") == "1",
         "ui_public_version": rows.get("ui_public_version", "v1"),
         "ui_admin_version": rows.get("ui_admin_version", "v2"),
+        "event_snowflakes_enabled": rows.get("event_snowflakes_enabled", "1") == "1",
+        "avalanche_history_reset_at": int(rows.get("avalanche_history_reset_at", "0") or "0"),
     }
 
 
@@ -1073,10 +1134,19 @@ def compute_user_balances(stars_balance: int, wager_left: int) -> dict:
     }
 
 
+def is_snowflakes_active_in_db(conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM app_settings WHERE key = 'event_snowflakes_enabled'")
+    row = cur.fetchone()
+    return (row[0] if row else "1") == "1"
+
+
 def add_event_points_from_stars(conn: sqlite3.Connection, uid: int, spent_stars: int) -> None:
-    """Усложнённое начисление снежинок: 1 снежинка за каждые 2 ★ оборота."""
+    """Начисляет снежинки только если ивент открыт и включено начисление снежинок в админке."""
     pts = spent_stars // 2
     if pts <= 0 or not is_event_unlocked_for_user(uid):
+        return
+    if not is_snowflakes_active_in_db(conn):
         return
     conn.execute("UPDATE users SET event_points = event_points + ? WHERE user_id = ?", (pts, uid))
 
@@ -1087,11 +1157,15 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int) -> list[dict]:
     cur.execute("SELECT case_id, opens_count, max_opens FROM case_stock")
     stock_map = {r[0]: (int(r[1]), int(r[2])) for r in cur.fetchall()}
 
+    cur.execute("SELECT case_id, count FROM user_free_cases WHERE user_id = ? AND count > 0", (uid,))
+    free_map = {r[0]: int(r[1]) for r in cur.fetchall()}
+
     result = [
         {
             "id": "daily",
             "name": "Ежедневный",
             "price": 0,
+            "free_opens": 0,
             "is_daily": True,
             "badge": "24Ч",
             "icon": "daily.png",
@@ -1130,6 +1204,7 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int) -> list[dict]:
             "id": cfg["id"],
             "name": cfg["name"],
             "price": int(cfg["price"]),
+            "free_opens": free_map.get(cid, 0),
             "is_daily": False,
             "badge": cfg.get("badge", "ЗИМА"),
             "icon": cfg.get("icon", "starter.png"),
@@ -1151,6 +1226,169 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int) -> list[dict]:
             ],
         })
     return result
+
+
+# =========================================================
+# ОБЩИЕ РАУНДЫ «ЛАВИНЫ» + «ЗАКОН ПОДЛОСТИ»
+# =========================================================
+def compute_avalanche_mult_at_elapsed(sec: float) -> float:
+    """Ускоренный плавный разгон от 0.00x (совпадает с формулой на фронтенде)."""
+    if sec <= 0:
+        return 0.0
+    val = 0.085 * sec + 0.014 * (sec ** 2) + 0.0011 * (sec ** 3)
+    return round(min(100.0, val), 2)
+
+
+def compute_avalanche_duration_for_crash(target_crash: float) -> float:
+    if target_crash <= 0.0:
+        return 0.45
+    lo, hi = 0.0, 90.0
+    for _ in range(36):
+        mid = (lo + hi) * 0.5
+        if compute_avalanche_mult_at_elapsed(mid) < target_crash:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) * 0.5
+
+
+def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float:
+    """
+    Хитрая логика («закон подлости»):
+    - Чаще выпадает диапазон 1.00x–2.00x (вместо сплошных 0.1–0.9x), чтобы хотелось забрать чуть позже.
+    - Присутствует шанс 0.00x (~14%).
+    - Если есть реальные ставки игроков с авто-выходом (например 2.00x), подстраивает сход
+      чуть ниже целевого порога или сразу после него в зависимости от размера ставки.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT bet_stars, auto_mult FROM avalanche_bets WHERE round_id = ? AND status = 'playing'",
+        (round_id,),
+    )
+    bets = cur.fetchall()
+
+    r = random.random()
+
+    # Если ставок реальных игроков нет — чаще показываем красивые иксы 1.35x .. 4.20x
+    if not bets:
+        if r < 0.10:
+            return 0.00
+        if r < 0.65:
+            return round(random.uniform(1.25, 2.25), 2)
+        if r < 0.90:
+            return round(random.uniform(2.25, 4.80), 2)
+        return round(random.uniform(4.80, 12.00), 2)
+
+    # Есть реальные ставки игроков — включаем закон подлости
+    if r < 0.14:
+        return 0.00
+
+    # Проверяем, поставил ли кто-то авто-выход
+    auto_targets = [float(b[1]) for b in bets if float(b[1] or 0) > 1.05]
+    if auto_targets and random.random() < 0.62:
+        min_auto = min(auto_targets)
+        # Обвал ровно за 0.02–0.11x до срабатывания авто-выхода игрока!
+        if min_auto <= 2.40:
+            tease = max(1.01, round(min_auto - random.uniform(0.02, 0.11), 2))
+            return tease
+
+    # В остальных случаях чаще держим 1.05x .. 1.98x (прямо перед психологическим порогом 2.00x)
+    if r < 0.74:
+        return round(random.uniform(1.06, 1.98), 2)
+    if r < 0.94:
+        return round(random.uniform(2.01, 3.40), 2)
+    return round(random.uniform(3.40, 9.50), 2)
+
+
+def sync_shared_avalanche_round(conn: sqlite3.Connection) -> dict:
+    """Синхронизирует состояние текущего общего раунда «Лавины» по мировому времени."""
+    now = time.time()
+    epoch_idx = int(now // AV_SLOT_LEN)
+    slot_offset = now - epoch_idx * AV_SLOT_LEN
+    round_id = f"round_{epoch_idx}"
+
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT crash_mult, finalized FROM avalanche_shared_rounds WHERE round_id = ?",
+        (round_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        initial_crash = roll_smart_avalanche_crash(conn, round_id)
+        cur.execute(
+            "INSERT OR IGNORE INTO avalanche_shared_rounds (round_id, epoch_idx, crash_mult, started_at, finalized) VALUES (?, ?, ?, ?, 0)",
+            (round_id, epoch_idx, initial_crash, int(epoch_idx * AV_SLOT_LEN)),
+        )
+        crash_mult = initial_crash
+        finalized = 0
+    else:
+        crash_mult = float(row[0])
+        finalized = int(row[1])
+
+    flight_duration = compute_avalanche_duration_for_crash(crash_mult)
+    max_flight = AV_SLOT_LEN - AV_WAIT_SEC - AV_CRASH_PAUSE_SEC
+    active_flight_len = min(max_flight, flight_duration)
+    effective_crash = 0.0 if crash_mult <= 0.0 else compute_avalanche_mult_at_elapsed(active_flight_len)
+
+    if slot_offset < AV_WAIT_SEC:
+        phase = "waiting"
+        current_mult = 0.0
+    elif (slot_offset - AV_WAIT_SEC) < active_flight_len and effective_crash > 0.0:
+        phase = "running"
+        current_mult = compute_avalanche_mult_at_elapsed(slot_offset - AV_WAIT_SEC)
+    else:
+        phase = "crashed"
+        current_mult = effective_crash
+        if finalized == 0:
+            cur.execute("UPDATE avalanche_shared_rounds SET finalized = 1 WHERE round_id = ?", (round_id,))
+            cur.execute(
+                "UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE round_id = ? AND status = 'playing'",
+                (round_id,),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO avalanche_history (round_id, crash_mult, created_at) VALUES (?, ?, ?)",
+                (round_id, effective_crash, int(now)),
+            )
+
+    # Закрываем зависшие прошлые раунды, если в них остались активные ставки
+    cur.execute(
+        "UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE round_id != ? AND status = 'playing'",
+        (round_id,),
+    )
+
+    cur.execute(
+        "SELECT user_id, username, bet_stars, status, cashout_mult, payout FROM avalanche_bets WHERE round_id = ? ORDER BY id DESC",
+        (round_id,),
+    )
+    players = [
+        {
+            "user_id": int(p[0]),
+            "username": p[1] or "Игрок",
+            "bet_stars": int(p[2]),
+            "status": p[3],
+            "cashout_mult": float(p[4]),
+            "payout": int(p[5]),
+        }
+        for p in cur.fetchall()
+    ]
+
+    cur.execute("SELECT crash_mult FROM avalanche_history ORDER BY id DESC LIMIT 15")
+    history = [float(h[0]) for h in cur.fetchall()]
+
+    cur.execute("SELECT value FROM app_settings WHERE key = 'avalanche_history_reset_at'")
+    r_reset = cur.fetchone()
+    reset_at = int(r_reset[0]) if r_reset else 0
+
+    conn.commit()
+    return {
+        "round_id": round_id,
+        "phase": phase,
+        "current_mult": current_mult,
+        "crash_mult": effective_crash,
+        "players": players,
+        "history": history,
+        "history_reset_at": reset_at,
+    }
 
 
 async def api_state(request: web.Request) -> web.Response:
@@ -1314,7 +1552,7 @@ async def api_spin_daily(request: web.Request) -> web.Response:
         """,
         (now, balances["stars_balance"], balances["wager_left"], uid),
     )
-    if is_event_unlocked_for_user(uid, now):
+    if is_event_unlocked_for_user(uid, now) and is_snowflakes_active_in_db(conn):
         cur.execute("UPDATE users SET event_points = event_points + 2 WHERE user_id = ?", (uid,))
     conn.commit()
     conn.close()
@@ -1372,11 +1610,18 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
                 conn.close()
                 return web.json_response({"ok": False, "message": "Кейс раскуплен (запас закончился)"})
 
+        # Проверяем, есть ли у игрока бесплатное открытие этого кейса (выданное админом или промокодом)
+        cur.execute("SELECT count FROM user_free_cases WHERE user_id = ? AND case_id = ?", (uid, case_id))
+        fc_row = cur.fetchone()
+        free_opens_left = int(fc_row[0]) if fc_row else 0
+        used_free_open = free_opens_left > 0
+
         cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
         row = cur.fetchone()
         bal = int(row[0]) if row else 0
         wag = int(row[1]) if row else 0
-        if bal < price:
+
+        if not used_free_open and bal < price:
             cur.execute("ROLLBACK")
             conn.close()
             return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
@@ -1385,13 +1630,23 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
             cur.execute("UPDATE case_stock SET opens_count = opens_count + 1 WHERE case_id = ?", (case_id,))
             remaining = max(0, max_opens_val - (cur_opens + 1))
 
-        new_bal = bal - price
-        new_wag = max(0, wag - price)
-        cur.execute(
-            "UPDATE users SET stars_balance = ?, wager_left = ?, total_spins = total_spins + 1 WHERE user_id = ?",
-            (new_bal, new_wag, uid),
-        )
-        add_event_points_from_stars(conn, uid, price)
+        if used_free_open:
+            free_opens_left -= 1
+            cur.execute(
+                "UPDATE user_free_cases SET count = ? WHERE user_id = ? AND case_id = ?",
+                (free_opens_left, uid, case_id),
+            )
+            new_bal = bal
+            new_wag = wag
+            cur.execute("UPDATE users SET total_spins = total_spins + 1 WHERE user_id = ?", (uid,))
+        else:
+            new_bal = bal - price
+            new_wag = max(0, wag - price)
+            cur.execute(
+                "UPDATE users SET stars_balance = ?, wager_left = ?, total_spins = total_spins + 1 WHERE user_id = ?",
+                (new_bal, new_wag, uid),
+            )
+            add_event_points_from_stars(conn, uid, price)
 
         drop = roll_from_pool(cfg["pool"])
         drop_id = f"drop_{uuid.uuid4().hex[:10]}"
@@ -1423,6 +1678,8 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
         "ok": True,
         "drop_id": drop_id,
         "case_id": case_id,
+        "used_free_open": used_free_open,
+        "free_opens_left": free_opens_left,
         "drop": drop,
         "can_reroll": reroll_allowed,
         "reroll_price": reroll_price,
@@ -1581,8 +1838,22 @@ async def api_upgrade_spin(request: web.Request) -> web.Response:
     })
 
 
+async def api_avalanche_state(request: web.Request) -> web.Response:
+    """Возвращает состояние общего раунда «Лавины», список реальных ставок и историю иксов."""
+    body = await request.json()
+    tg_user = verify_init_data(body.get("initData", ""))
+    if not tg_user:
+        return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+    conn = sqlite3.connect(DB_PATH)
+    state = sync_shared_avalanche_round(conn)
+    conn.close()
+
+    return web.json_response({"ok": True, **state})
+
+
 async def api_avalanche_start(request: web.Request) -> web.Response:
-    """Запуск раунда «Лавины»: списывает ставку и фиксирует точку схода лавины на сервере."""
+    """Принимает ставку игрока в общий раунд «Лавины» (с пересчётом точки краша по закону подлости)."""
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
@@ -1592,50 +1863,77 @@ async def api_avalanche_start(request: web.Request) -> web.Response:
     if not is_event_unlocked_for_user(uid):
         return web.json_response({"ok": False, "message": "Игра «Лавина» откроется 1 декабря в 00:00 МСК"})
 
+    uname = (tg_user.get("username") or "").lstrip("@").strip() or (tg_user.get("first_name") or "Игрок")
     bet = int(body.get("bet_stars", 0) or 0)
     auto_enabled = bool(body.get("auto_enabled", False))
     auto_mult = round(float(body.get("auto_mult", 1.5) or 1.5), 2) if auto_enabled else 0.0
 
     if bet < 1 or bet > 2000:
         return web.json_response({"ok": False, "message": "Ставка от 1 до 2000 ★"})
-    if auto_enabled and (auto_mult < 1.1 or auto_mult > 25.0):
-        return web.json_response({"ok": False, "message": "Авто-выход от 1.10x до 25.00x"})
+    if auto_enabled and (auto_mult < 1.05 or auto_mult > 25.0):
+        return web.json_response({"ok": False, "message": "Авто-выход от 1.05x до 25.00x"})
 
     conn = sqlite3.connect(DB_PATH)
+    conn.isolation_level = None
     cur = conn.cursor()
-    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
-    r_u = cur.fetchone() or (0, 0)
-    bal, wag = int(r_u[0]), int(r_u[1])
-    if bal < bet:
+    cur.execute("BEGIN IMMEDIATE")
+
+    try:
+        state = sync_shared_avalanche_round(conn)
+        round_id = state["round_id"]
+
+        if state["phase"] != "waiting":
+            cur.execute("ROLLBACK")
+            conn.close()
+            return web.json_response({"ok": False, "message": "Раунд уже идёт — дождитесь следующего"})
+
+        cur.execute("SELECT 1 FROM avalanche_bets WHERE round_id = ? AND user_id = ?", (round_id, uid))
+        if cur.fetchone():
+            cur.execute("ROLLBACK")
+            conn.close()
+            return web.json_response({"ok": False, "message": "Вы уже поставили в этот раунд"})
+
+        cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+        r_u = cur.fetchone() or (0, 0)
+        bal, wag = int(r_u[0]), int(r_u[1])
+        if bal < bet:
+            cur.execute("ROLLBACK")
+            conn.close()
+            return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
+
+        now_int = int(time.time())
+        new_bal = bal - bet
+        new_wag = max(0, wag - bet)
+
+        cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
+        cur.execute(
+            """
+            INSERT INTO avalanche_bets (round_id, user_id, username, bet_stars, auto_mult, status, cashout_mult, payout, created_at)
+            VALUES (?, ?, ?, ?, ?, 'playing', 0, 0, ?)
+            """,
+            (round_id, uid, uname, bet, auto_mult, now_int),
+        )
+
+        # Пересчитываем точку схода раунда с учётом новой реальной ставки («закон подлости»)
+        new_crash = roll_smart_avalanche_crash(conn, round_id)
+        cur.execute(
+            "UPDATE avalanche_shared_rounds SET crash_mult = ? WHERE round_id = ?",
+            (new_crash, round_id),
+        )
+
+        add_event_points_from_stars(conn, uid, bet)
+        cur.execute("COMMIT")
+    except Exception as e:
+        cur.execute("ROLLBACK")
         conn.close()
-        return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
+        return web.json_response({"ok": False, "message": f"Ошибка ставки: {e}"})
 
-    u = random.random()
-    if u < 0.14:
-        crash_mult = 1.00
-    else:
-        raw_c = 0.86 / max(0.01, (1.0 - u))
-        crash_mult = round(min(25.0, max(1.01, raw_c)), 2)
-
-    round_id = f"av_{uuid.uuid4().hex[:10]}"
-    now = int(time.time())
-    new_bal = bal - bet
-    new_wag = max(0, wag - bet)
-
-    cur.execute("UPDATE users SET stars_balance = ?, wager_left = ? WHERE user_id = ?", (new_bal, new_wag, uid))
-    cur.execute(
-        "INSERT INTO avalanche_rounds (round_id, user_id, bet_stars, crash_mult, auto_mult, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
-        (round_id, uid, bet, crash_mult, auto_mult, now),
-    )
-    add_event_points_from_stars(conn, uid, bet)
-    conn.commit()
     conn.close()
-
     balances = compute_user_balances(new_bal, new_wag)
     return web.json_response({
         "ok": True,
         "round_id": round_id,
-        "crash_mult": crash_mult,
+        "crash_mult": new_crash,
         "auto_mult": auto_mult,
         "stars_balance": balances["stars_balance"],
         "wager_left": balances["wager_left"],
@@ -1644,42 +1942,83 @@ async def api_avalanche_start(request: web.Request) -> web.Response:
 
 
 async def api_avalanche_cashout(request: web.Request) -> web.Response:
-    """Фиксация выигрыша при нажатии «Забрать» или срабатывании авто-выхода."""
+    """Мгновенный вывод выигрыша игрока при нажатии «Забрать» или авто-выходе."""
     body = await request.json()
     tg_user = verify_init_data(body.get("initData", ""))
     if not tg_user:
         return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
 
     uid = int(tg_user["id"])
-    round_id = str(body.get("round_id", "")).strip()
-    claim_mult = round(float(body.get("mult", 1.0) or 1.0), 2)
+    req_round_id = str(body.get("round_id", "")).strip()
+    claim_mult = round(float(body.get("mult", 0.0) or 0.0), 2)
 
     conn = sqlite3.connect(DB_PATH)
+    conn.isolation_level = None
     cur = conn.cursor()
-    cur.execute(
-        "SELECT bet_stars, crash_mult, status FROM avalanche_rounds WHERE round_id = ? AND user_id = ?",
-        (round_id, uid),
-    )
-    row = cur.fetchone()
-    if not row or row[2] != "active":
-        conn.close()
-        return web.json_response({"ok": False, "message": "Раунд уже завершён"})
+    cur.execute("BEGIN IMMEDIATE")
 
-    bet_stars, crash_mult = int(row[0]), float(row[1])
-    if claim_mult < 1.01 or claim_mult > crash_mult:
-        cur.execute("UPDATE avalanche_rounds SET status = 'crashed' WHERE round_id = ?", (round_id,))
-        conn.commit()
-        conn.close()
-        return web.json_response({"ok": False, "message": "Лавина сошла раньше!"})
+    try:
+        now = time.time()
+        epoch_idx = int(now // AV_SLOT_LEN)
+        slot_offset = now - epoch_idx * AV_SLOT_LEN
+        cur_round_id = f"round_{epoch_idx}"
+        target_round_id = req_round_id or cur_round_id
 
-    payout = max(1, int(round(bet_stars * claim_mult)))
-    cur.execute("UPDATE avalanche_rounds SET status = 'cashed' WHERE round_id = ?", (round_id,))
-    cur.execute("UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?", (payout, uid))
-    cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
-    r_u = cur.fetchone() or (0, 0)
-    conn.commit()
+        cur.execute(
+            "SELECT id, bet_stars, status FROM avalanche_bets WHERE round_id = ? AND user_id = ?",
+            (target_round_id, uid),
+        )
+        bet_row = cur.fetchone()
+        if not bet_row or bet_row[2] != "playing":
+            cur.execute("ROLLBACK")
+            conn.close()
+            return web.json_response({"ok": False, "message": "Ставка уже завершена или не найдена"})
+
+        bet_id, bet_stars = int(bet_row[0]), int(bet_row[1])
+
+        cur.execute("SELECT crash_mult FROM avalanche_shared_rounds WHERE round_id = ?", (target_round_id,))
+        rnd_row = cur.fetchone()
+        raw_crash = float(rnd_row[0]) if rnd_row else 0.0
+
+        flight_duration = compute_avalanche_duration_for_crash(raw_crash)
+        max_flight = AV_SLOT_LEN - AV_WAIT_SEC - AV_CRASH_PAUSE_SEC
+        active_flight_len = min(max_flight, flight_duration)
+        effective_crash = 0.0 if raw_crash <= 0.0 else compute_avalanche_mult_at_elapsed(active_flight_len)
+
+        # Проверяем, не сошла ли лавина раньше
+        if target_round_id != cur_round_id or effective_crash <= 0.0:
+            cur.execute("UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE id = ?", (bet_id,))
+            cur.execute("COMMIT")
+            conn.close()
+            return web.json_response({"ok": False, "message": "Лавина сошла раньше!"})
+
+        flight_elapsed = max(0.0, slot_offset - AV_WAIT_SEC)
+        # Небольшой допуск 0.45 сек на сетевой пинг
+        server_mult_with_grace = compute_avalanche_mult_at_elapsed(flight_elapsed + 0.45)
+
+        if claim_mult < 0.05 or claim_mult > effective_crash or claim_mult > server_mult_with_grace:
+            if claim_mult > effective_crash:
+                cur.execute("UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE id = ?", (bet_id,))
+                cur.execute("COMMIT")
+                conn.close()
+                return web.json_response({"ok": False, "message": "Лавина накрыла раньше!"})
+            claim_mult = min(effective_crash, server_mult_with_grace)
+
+        payout = max(1, int(round(bet_stars * claim_mult)))
+        cur.execute(
+            "UPDATE avalanche_bets SET status = 'won', cashout_mult = ?, payout = ? WHERE id = ?",
+            (claim_mult, payout, bet_id),
+        )
+        cur.execute("UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?", (payout, uid))
+        cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+        r_u = cur.fetchone() or (0, 0)
+        cur.execute("COMMIT")
+    except Exception as e:
+        cur.execute("ROLLBACK")
+        conn.close()
+        return web.json_response({"ok": False, "message": f"Ошибка вывода: {e}"})
+
     conn.close()
-
     balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
     return web.json_response({
         "ok": True,
@@ -1702,6 +2041,10 @@ async def api_event_claim_stage(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Ивент ещё не стартовал"})
 
     conn = sqlite3.connect(DB_PATH)
+    if not is_snowflakes_active_in_db(conn):
+        conn.close()
+        return web.json_response({"ok": False, "message": "Начисление и награды снежинок временно закрыты"})
+
     cur = conn.cursor()
     cur.execute("SELECT event_points, event_claimed_stage, stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
     row = cur.fetchone()
@@ -1754,7 +2097,7 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT reward_stars, max_uses, uses_count, active FROM promocodes WHERE code = ?",
+        "SELECT reward_stars, max_uses, uses_count, active, reward_type, case_id, reward_cases FROM promocodes WHERE code = ?",
         (code,),
     )
     promo = cur.fetchone()
@@ -1762,7 +2105,13 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
         conn.close()
         return web.json_response({"ok": False, "message": "Промокод не найден или отключён"})
 
-    reward_stars, max_uses, uses_count = int(promo[0]), int(promo[1]), int(promo[2])
+    reward_stars = int(promo[0] or 0)
+    max_uses = int(promo[1] or 1)
+    uses_count = int(promo[2] or 0)
+    reward_type = str(promo[4] or "stars")
+    case_id = str(promo[5] or "")
+    reward_cases = int(promo[6] or 0)
+
     if uses_count >= max_uses:
         conn.close()
         return web.json_response({"ok": False, "message": "Лимит активаций промокода исчерпан"})
@@ -1777,10 +2126,24 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
         (code, uid, now),
     )
     cur.execute("UPDATE promocodes SET uses_count = uses_count + 1 WHERE code = ?", (code,))
-    cur.execute(
-        "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
-        (reward_stars, reward_stars, uid),
-    )
+
+    if reward_type == "case" and case_id and reward_cases > 0:
+        cur.execute(
+            """
+            INSERT INTO user_free_cases (user_id, case_id, count) VALUES (?, ?, ?)
+            ON CONFLICT(user_id, case_id) DO UPDATE SET count = count + ?
+            """,
+            (uid, case_id, reward_cases, reward_cases),
+        )
+        case_name = ALL_CASES_CONFIG.get(case_id, {}).get("name", case_id)
+        msg = f"Промокод активирован: +{reward_cases} беспл. откр. кейса «{case_name}»!"
+    else:
+        cur.execute(
+            "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
+            (reward_stars, reward_stars, uid),
+        )
+        msg = f"Промокод активирован: +{reward_stars} ★"
+
     cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
     r_u = cur.fetchone() or (0, 0)
 
@@ -1790,11 +2153,14 @@ async def api_promo_redeem(request: web.Request) -> web.Response:
     balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
     return web.json_response({
         "ok": True,
+        "reward_type": reward_type,
         "reward_stars": reward_stars,
+        "case_id": case_id,
+        "reward_cases": reward_cases,
         "stars_balance": balances["stars_balance"],
         "wager_left": balances["wager_left"],
         "withdrawable_stars": balances["withdrawable_stars"],
-        "message": f"Промокод активирован: +{reward_stars} ★",
+        "message": msg,
     })
 
 
@@ -1934,11 +2300,106 @@ async def api_admin_ui_version(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Неверные параметры версии"}, status=400)
 
 
+async def api_admin_event_toggle(request: web.Request) -> web.Response:
+    """Закрывает или открывает начисление снежинок ивента «Снегопад» (игры остаются доступны)."""
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+    enabled = bool(body.get("enabled", True))
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('event_snowflakes_enabled', ?)",
+        ("1" if enabled else "0",),
+    )
+    conn.commit()
+    conn.close()
+    modes = get_system_modes()
+    return web.json_response({
+        "ok": True,
+        "system_modes": modes,
+        "message": "Начисление снежинок ОТКРЫТО" if enabled else "Начисление снежинок ЗАКРЫТО",
+    })
+
+
+async def api_admin_reset_games_history(request: web.Request) -> web.Response:
+    """Сбрасывает историю раундов «Лавины» перед официальным запуском ивента 1 декабря."""
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+    now_ts = int(time.time())
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM avalanche_history")
+    conn.execute("DELETE FROM avalanche_bets")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('avalanche_history_reset_at', ?)",
+        (str(now_ts),),
+    )
+    conn.commit()
+    conn.close()
+    return web.json_response({
+        "ok": True,
+        "history_reset_at": now_ts,
+        "message": "История игр полностью очищена",
+    })
+
+
+async def api_admin_user_free_cases(request: web.Request) -> web.Response:
+    """Выдаёт или списывает бесплатные открытия выбранного кейса игроку по @username."""
+    body = await request.json()
+    if not check_admin(body):
+        return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+    target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+    case_id = str(body.get("case_id", "")).strip()
+    delta = int(body.get("delta", 0) or 0)
+    cfg = ALL_CASES_CONFIG.get(case_id)
+
+    if not target_uname or not cfg or delta == 0:
+        return web.json_response({"ok": False, "message": "Укажи @username, кейс и количество"})
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE lower(username) = ?", (target_uname,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
+
+    target_uid = int(row[0])
+    cur.execute("SELECT count FROM user_free_cases WHERE user_id = ? AND case_id = ?", (target_uid, case_id))
+    fc_row = cur.fetchone()
+    cur_count = int(fc_row[0]) if fc_row else 0
+    new_count = max(0, cur_count + delta)
+
+    cur.execute(
+        """
+        INSERT INTO user_free_cases (user_id, case_id, count) VALUES (?, ?, ?)
+        ON CONFLICT(user_id, case_id) DO UPDATE SET count = ?
+        """,
+        (target_uid, case_id, new_count, new_count),
+    )
+    conn.commit()
+    conn.close()
+
+    if delta > 0:
+        try:
+            await bot.send_message(
+                chat_id=target_uid,
+                text=f"🎁 Администратор выдал вам бесплатные открытия кейса «{cfg['name']}»: +{delta} шт. (всего: {new_count} шт.)!",
+            )
+        except Exception:
+            pass
+
+    return web.json_response({
+        "ok": True,
+        "free_opens": new_count,
+        "message": f"Кейс «{cfg['name']}» у @{target_uname}: теперь {new_count} беспл. откр.",
+    })
+
+
 async def api_admin_restock_case(request: web.Request) -> web.Response:
-    """
-    action == 'add': пополняет остаток без увеличения исходного лимита (было 55 из 60, +5 -> стало 60 из 60).
-    action == 'set_total': устанавливает новый исходный общий тираж (max_opens).
-    """
     body = await request.json()
     if not check_admin(body):
         return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
@@ -1967,7 +2428,6 @@ async def api_admin_restock_case(request: web.Request) -> web.Response:
         new_opens = min(opens_c, new_max)
         cur.execute("UPDATE case_stock SET max_opens = ?, opens_count = ? WHERE case_id = ?", (new_max, new_opens, case_id))
     else:
-        # Пополняем только остаток: уменьшаем opens_count не ниже 0, max_opens не трогаем
         new_opens = max(0, opens_c - amount)
         new_max = max_o
         cur.execute("UPDATE case_stock SET opens_count = ? WHERE case_id = ?", (new_opens, case_id))
@@ -1986,7 +2446,6 @@ async def api_admin_restock_case(request: web.Request) -> web.Response:
 
 
 async def api_admin_reset_event(request: web.Request) -> web.Response:
-    """Сброс ивента «Снегопад» с нуля для одного игрока или для всех."""
     body = await request.json()
     if not check_admin(body):
         return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
@@ -2162,16 +2621,42 @@ async def api_admin_create_promo(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Доступ запрещён"}, status=403)
 
     code = str(body.get("code", "")).strip().upper()
+    reward_type = str(body.get("reward_type", "stars")).strip()
     reward_stars = int(body.get("reward_stars", 0) or 0)
+    case_id = str(body.get("case_id", "")).strip()
+    reward_cases = int(body.get("reward_cases", 0) or 0)
     max_uses = int(body.get("max_uses", 1) or 1)
-    if not code or reward_stars < 1 or max_uses < 1:
-        return web.json_response({"ok": False, "message": "Заполни код, сумму ★ и лимит"})
+
+    if not code or max_uses < 1:
+        return web.json_response({"ok": False, "message": "Укажи код и количество активаций"})
+
+    if reward_type == "case":
+        cfg = ALL_CASES_CONFIG.get(case_id)
+        if not cfg or reward_cases < 1:
+            return web.json_response({"ok": False, "message": "Выбери кейс и количество открытий за активацию"})
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO promocodes (code, reward_stars, max_uses, uses_count, active, reward_type, case_id, reward_cases)
+            VALUES (?, 0, ?, 0, 1, 'case', ?, ?)
+            """,
+            (code, max_uses, case_id, reward_cases),
+        )
+        conn.commit()
+        conn.close()
+        return web.json_response({
+            "ok": True,
+            "message": f"Промокод {code} на {reward_cases} откр. кейса «{cfg['name']}» создан",
+        })
+
+    if reward_stars < 1:
+        return web.json_response({"ok": False, "message": "Укажи сумму ★ за 1 активацию"})
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         """
-        INSERT OR REPLACE INTO promocodes (code, reward_stars, max_uses, uses_count, active)
-        VALUES (?, ?, ?, 0, 1)
+        INSERT OR REPLACE INTO promocodes (code, reward_stars, max_uses, uses_count, active, reward_type, case_id, reward_cases)
+        VALUES (?, ?, ?, 0, 1, 'stars', '', 0)
         """,
         (code, reward_stars, max_uses),
     )
@@ -2252,6 +2737,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/reroll_case_drop", api_reroll_case_drop)
     app.router.add_post("/api/accept_case_drop", api_accept_case_drop)
     app.router.add_post("/api/upgrade_spin", api_upgrade_spin)
+    app.router.add_post("/api/avalanche_state", api_avalanche_state)
     app.router.add_post("/api/avalanche_start", api_avalanche_start)
     app.router.add_post("/api/avalanche_cashout", api_avalanche_cashout)
     app.router.add_post("/api/event_claim_stage", api_event_claim_stage)
@@ -2260,6 +2746,9 @@ def create_app() -> web.Application:
 
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)
+    app.router.add_post("/api/admin/event_toggle", api_admin_event_toggle)
+    app.router.add_post("/api/admin/reset_games_history", api_admin_reset_games_history)
+    app.router.add_post("/api/admin/user_free_cases", api_admin_user_free_cases)
     app.router.add_post("/api/admin/restock_case", api_admin_restock_case)
     app.router.add_post("/api/admin/reset_event", api_admin_reset_event)
     app.router.add_post("/api/admin/requests", api_admin_requests)
