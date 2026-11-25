@@ -322,7 +322,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
                 cur_opens = int(st_row[0]) if st_row else 0
                 max_opens_val = int(st_row[1]) if st_row else int(cfg.get("default_max_opens", 50))
                 if cur_opens >= max_opens_val:
-                    cur.execute("ROLLBACK")
+                    if conn.in_transaction:
+                        cur.execute("ROLLBACK")
                     conn.close()
                     return web.json_response({"ok": False, "message": "Кейс раскуплен (запас закончился)"})
 
@@ -337,7 +338,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             wag = int(row[1]) if row else 0
 
             if not used_free_open and bal < price:
-                cur.execute("ROLLBACK")
+                if conn.in_transaction:
+                    cur.execute("ROLLBACK")
                 conn.close()
                 return web.json_response({"ok": False, "message": f"Недостаточно звёзд (нужно {price} ★)"})
 
@@ -381,9 +383,11 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
                     (drop_id, uid, case_id, drop["drop_type"], drop["gift_id"], int(drop["stars_amount"]), drop["label"], drop["icon"], now),
                 )
 
-            cur.execute("COMMIT")
+            if conn.in_transaction:
+                cur.execute("COMMIT")
         except Exception as e:
-            cur.execute("ROLLBACK")
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
             conn.close()
             return web.json_response({"ok": False, "message": f"Ошибка открытия: {e}"})
 
@@ -547,7 +551,7 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
         if not tg_user:
             return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
         conn = sqlite3.connect(DB_PATH)
-        state = sync_shared_avalanche_round(conn)
+        state = sync_shared_avalanche_round(conn, auto_commit=True)
         conn.close()
         return web.json_response({"ok": True, **state})
 
@@ -577,17 +581,19 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
         cur.execute("BEGIN IMMEDIATE")
 
         try:
-            state = sync_shared_avalanche_round(conn)
+            state = sync_shared_avalanche_round(conn, auto_commit=False)
             round_id = state["round_id"]
 
             if state["phase"] != "waiting":
-                cur.execute("ROLLBACK")
+                if conn.in_transaction:
+                    cur.execute("ROLLBACK")
                 conn.close()
                 return web.json_response({"ok": False, "message": "Раунд уже идёт — дождитесь следующего"})
 
             cur.execute("SELECT 1 FROM avalanche_bets WHERE round_id = ? AND user_id = ?", (round_id, uid))
             if cur.fetchone():
-                cur.execute("ROLLBACK")
+                if conn.in_transaction:
+                    cur.execute("ROLLBACK")
                 conn.close()
                 return web.json_response({"ok": False, "message": "Вы уже поставили в этот раунд"})
 
@@ -595,7 +601,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             r_u = cur.fetchone() or (0, 0)
             bal, wag = int(r_u[0]), int(r_u[1])
             if bal < bet:
-                cur.execute("ROLLBACK")
+                if conn.in_transaction:
+                    cur.execute("ROLLBACK")
                 conn.close()
                 return web.json_response({"ok": False, "message": "Недостаточно звёзд на балансе"})
 
@@ -615,9 +622,11 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             new_crash = roll_smart_avalanche_crash(conn, round_id)
             cur.execute("UPDATE avalanche_shared_rounds SET crash_mult = ? WHERE round_id = ?", (new_crash, round_id))
             add_event_points_from_stars(conn, uid, bet)
-            cur.execute("COMMIT")
+            if conn.in_transaction:
+                cur.execute("COMMIT")
         except Exception as e:
-            cur.execute("ROLLBACK")
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
             conn.close()
             return web.json_response({"ok": False, "message": f"Ошибка ставки: {e}"})
 
@@ -661,7 +670,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             )
             bet_row = cur.fetchone()
             if not bet_row or bet_row[2] != "playing":
-                cur.execute("ROLLBACK")
+                if conn.in_transaction:
+                    cur.execute("ROLLBACK")
                 conn.close()
                 return web.json_response({"ok": False, "message": "Ставка уже завершена или не найдена"})
 
@@ -677,7 +687,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
 
             if target_round_id != cur_round_id or effective_crash <= 0.0:
                 cur.execute("UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE id = ?", (bet_id,))
-                cur.execute("COMMIT")
+                if conn.in_transaction:
+                    cur.execute("COMMIT")
                 conn.close()
                 return web.json_response({"ok": False, "message": "Лавина сошла раньше!"})
 
@@ -687,7 +698,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             if claim_mult < 0.05 or claim_mult > effective_crash or claim_mult > server_mult_with_grace:
                 if claim_mult > effective_crash:
                     cur.execute("UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE id = ?", (bet_id,))
-                    cur.execute("COMMIT")
+                    if conn.in_transaction:
+                        cur.execute("COMMIT")
                     conn.close()
                     return web.json_response({"ok": False, "message": "Лавина накрыла раньше!"})
                 claim_mult = min(effective_crash, server_mult_with_grace)
@@ -700,9 +712,11 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             cur.execute("UPDATE users SET stars_balance = stars_balance + ? WHERE user_id = ?", (payout, uid))
             cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
             r_u = cur.fetchone() or (0, 0)
-            cur.execute("COMMIT")
+            if conn.in_transaction:
+                cur.execute("COMMIT")
         except Exception as e:
-            cur.execute("ROLLBACK")
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
             conn.close()
             return web.json_response({"ok": False, "message": f"Ошибка вывода: {e}"})
 

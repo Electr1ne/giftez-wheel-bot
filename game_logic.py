@@ -280,7 +280,7 @@ def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float
     return round(random.uniform(3.40, 9.50), 2)
 
 
-def sync_shared_avalanche_round(conn: sqlite3.Connection) -> dict:
+def sync_shared_avalanche_round(conn: sqlite3.Connection, auto_commit: bool = True) -> dict:
     """Синхронизирует состояние общего раунда «Лавины» по мировому времени."""
     now = time.time()
     epoch_idx = int(now // AV_SLOT_LEN)
@@ -358,7 +358,9 @@ def sync_shared_avalanche_round(conn: sqlite3.Connection) -> dict:
     r_reset = cur.fetchone()
     reset_at = int(r_reset[0]) if r_reset else 0
 
-    conn.commit()
+    if auto_commit:
+        conn.commit()
+
     return {
         "round_id": round_id,
         "phase": phase,
