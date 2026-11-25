@@ -1,4 +1,5 @@
 import asyncio
+import html
 import random
 import sqlite3
 import time
@@ -29,13 +30,18 @@ from config import (
 )
 from db import (
     check_admin,
+    create_user_idea,
     ensure_user,
+    get_admin_ideas,
     get_all_user_ids,
     get_system_modes,
+    get_user_idea_cooldown,
+    get_user_ideas,
     is_case_visible_for_user,
     is_event_unlocked_for_user,
     mark_request_done,
     resolve_user_ui_version,
+    review_user_idea,
     set_system_mode,
     set_ui_version,
     verify_init_data,
@@ -118,6 +124,77 @@ async def notify_user_withdraw_done(
         await bot.send_message(chat_id=uid, text=text, reply_markup=kb)
     except Exception as e:
         print(f"[notify_done] Не удалось отправить уведомление пользователю {uid}: {e}")
+
+
+def build_admin_idea_kb(idea_id: int) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(text="✅ Принять (0 ★)", callback_data=f"idea_act:acc0:{idea_id}"),
+            InlineKeyboardButton(text="⭐ Принять + ★", callback_data=f"idea_act:acc_stars:{idea_id}"),
+        ],
+        [
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"idea_act:rej0:{idea_id}"),
+            InlineKeyboardButton(text="📝 Отклонить с причиной", callback_data=f"idea_act:rej_reason:{idea_id}"),
+        ],
+    ]
+    if VERCEL_APP_URL:
+        rows.append([
+            InlineKeyboardButton(
+                text="📋 Открыть страницу идей",
+                web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/admin_ideas.html"),
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def notify_user_idea_reviewed(bot: Bot, idea: dict) -> None:
+    uid = int(idea["user_id"])
+    idea_id = int(idea["id"])
+    theme_safe = html.escape(str(idea.get("theme", "")))
+    status = str(idea.get("status", ""))
+
+    if status == "accepted":
+        eta = html.escape(str(idea.get("eta_updates") or "2–4"))
+        reward = int(idea.get("stars_reward") or 0)
+        reward_line = (
+            f"\n⭐ Начислена награда за идею: <b>+{reward} ★</b> (зачислено на баланс)."
+            if reward > 0
+            else "\nℹ️ Идея принята без дополнительного начисления звёзд."
+        )
+        text = (
+            f"💡 <b>Ваша идея #{idea_id} принята!</b>\n"
+            f"• Тема: <b>{theme_safe}</b>\n"
+            f"• Ориентир реализации: ближайшие <b>{eta}</b> обновлений."
+            f"{reward_line}\n\n"
+            f"Спасибо за вклад в развитие GiftezUp!"
+        )
+    elif status == "rejected":
+        reason = str(idea.get("reject_reason") or "").strip()
+        reason_line = (
+            f"\n• Причина: <i>{html.escape(reason)}</i>"
+            if reason
+            else "\n• Причина не указана администратором."
+        )
+        text = (
+            f"❌ <b>Ваша идея #{idea_id} отклонена</b>\n"
+            f"• Тема: <b>{theme_safe}</b>"
+            f"{reason_line}\n\n"
+            f"Следующую идею можно будет отправить через <b>24 часа</b>."
+        )
+    else:
+        return
+
+    kb = None
+    if VERCEL_APP_URL:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть профиль", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/profile.html"))]
+            ]
+        )
+    try:
+        await bot.send_message(chat_id=uid, text=text, parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        print(f"[notify_idea] Не удалось уведомить пользователя {uid}: {e}")
 
 
 def register_api_routes(app: web.Application, bot: Bot) -> None:
@@ -942,7 +1019,121 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             "withdrawable_stars": new_balances["withdrawable_stars"],
         })
 
+    # ======================== USER IDEAS ENDPOINTS ========================
+    async def api_ideas_list(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+        ensure_user(uid, (tg_user.get("username") or "").lstrip("@"), tg_user.get("first_name") or "")
+        ideas = get_user_ideas(uid, limit=40)
+        cd = get_user_idea_cooldown(uid)
+        return web.json_response({
+            "ok": True,
+            "ideas": ideas,
+            "cooldown": cd,
+        })
+
+    async def api_ideas_create(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+
+        uid = int(tg_user["id"])
+        uname = (tg_user.get("username") or "").lstrip("@").strip()
+        first_name = (tg_user.get("first_name") or "").strip()
+        ensure_user(uid, uname, first_name)
+
+        cd = get_user_idea_cooldown(uid)
+        if not cd["can_submit"]:
+            msg = (
+                "После отклонения идею можно отправить через 24 часа."
+                if cd["cooldown_reason"] == "rejected_24h"
+                else "Отправлять новую идею можно раз в 30 минут."
+            )
+            return web.json_response({"ok": False, "message": msg, "cooldown": cd})
+
+        theme = str(body.get("theme", "")).strip()[:100]
+        description = str(body.get("description", "")).strip()[:800]
+        implementation_logic = str(body.get("implementation_logic", "")).strip()[:800]
+
+        if len(theme) < 3:
+            return web.json_response({"ok": False, "message": "Укажи тему идеи (минимум 3 символа)"})
+        if len(description) < 10:
+            return web.json_response({"ok": False, "message": "Опиши идею подробнее (минимум 10 символов)"})
+        if len(implementation_logic) < 10:
+            return web.json_response({"ok": False, "message": "Опиши, как видишь реализацию (минимум 10 символов)"})
+
+        idea = create_user_idea(
+            user_id=uid,
+            username=uname or first_name,
+            theme=theme,
+            description=description,
+            implementation_logic=implementation_logic,
+        )
+
+        author_tag = f"@{uname}" if uname else f"{html.escape(first_name or 'Игрок')}"
+        admin_text = (
+            f"💡 <b>Новая идея #{idea['id']}</b>\n"
+            f"• Автор: {author_tag} (ID: <code>{uid}</code>)\n"
+            f"• Тема: <b>{html.escape(theme)}</b>\n\n"
+            f"<b>Описание:</b>\n{html.escape(description)}\n\n"
+            f"<b>Как видит реализацию:</b>\n{html.escape(implementation_logic)}"
+        )
+        kb = build_admin_idea_kb(int(idea["id"]))
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=admin_id, text=admin_text, parse_mode="HTML", reply_markup=kb)
+            except Exception as e:
+                print(f"[idea_notify_admin] Ошибка отправки админу {admin_id}: {e}")
+
+        new_cd = get_user_idea_cooldown(uid)
+        return web.json_response({
+            "ok": True,
+            "idea": idea,
+            "cooldown": new_cd,
+            "message": f"Идея #{idea['id']} отправлена на рассмотрение!",
+        })
+
     # ======================== ADMIN ENDPOINTS ========================
+    async def api_admin_ideas_list(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+        status_filter = str(body.get("status", "all")).strip()
+        ideas = get_admin_ideas(status_filter=status_filter, limit=120)
+        return web.json_response({"ok": True, "ideas": ideas})
+
+    async def api_admin_ideas_review(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+        idea_id = int(body.get("idea_id", 0) or 0)
+        decision = str(body.get("decision", "")).strip()
+        stars_reward = int(body.get("stars_reward", 0) or 0)
+        eta_updates = str(body.get("eta_updates", "2–4")).strip() or "2–4"
+        reject_reason = str(body.get("reject_reason", "")).strip()
+
+        ok, msg, updated_idea = review_user_idea(
+            idea_id=idea_id,
+            decision=decision,
+            stars_reward=stars_reward,
+            eta_updates=eta_updates,
+            reject_reason=reject_reason,
+        )
+        if not ok or not updated_idea:
+            return web.json_response({"ok": False, "message": msg})
+
+        await notify_user_idea_reviewed(bot, updated_idea)
+        return web.json_response({
+            "ok": True,
+            "idea": updated_idea,
+            "message": "Идея принята" if decision == "accepted" else "Идея отклонена",
+        })
+
     async def api_admin_mode(request: web.Request) -> web.Response:
         body = await request.json()
         if not check_admin(body):
@@ -1314,6 +1505,11 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/event_claim_stage", api_event_claim_stage)
     app.router.add_post("/api/promo_redeem", api_promo_redeem)
     app.router.add_post("/api/withdraw_stars", api_withdraw_stars)
+
+    app.router.add_post("/api/ideas", api_ideas_list)
+    app.router.add_post("/api/ideas/create", api_ideas_create)
+    app.router.add_post("/api/admin/ideas", api_admin_ideas_list)
+    app.router.add_post("/api/admin/ideas/review", api_admin_ideas_review)
 
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)

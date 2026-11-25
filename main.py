@@ -1,9 +1,13 @@
 import asyncio
+import html
 import sqlite3
 import time
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -14,7 +18,7 @@ from aiogram.types import (
 )
 from aiohttp import web
 
-from api_routes import notify_user_withdraw_done, register_api_routes
+from api_routes import notify_user_idea_reviewed, notify_user_withdraw_done, register_api_routes
 from config import (
     ADMIN_IDS,
     BOT_TOKEN,
@@ -26,15 +30,22 @@ from config import (
 )
 from db import (
     ensure_user,
+    get_idea_by_id,
     get_system_modes,
     init_db,
     mark_request_done,
+    review_user_idea,
     set_system_mode,
     set_ui_version,
 )
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
+
+
+class IdeaModerationStates(StatesGroup):
+    waiting_stars_amount = State()
+    waiting_reject_reason = State()
 
 
 @web.middleware
@@ -54,13 +65,16 @@ def build_admin_kb(modes: dict) -> InlineKeyboardMarkup:
     pub_v = modes.get("ui_public_version", "v1")
     adm_label = "👁 Мой вид: Новый (v2)" if adm_v == "v2" else "👁 Мой вид: Старый (v1)"
     pub_label = "🌍 Для всех: Новый (v2)" if pub_v == "v2" else "🌍 Для всех: Старый (v1)"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=adm_label, callback_data="toggle_ui:admin")],
-            [InlineKeyboardButton(text=pub_label, callback_data="toggle_ui:public")],
-            [InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html"))],
-        ]
-    )
+    rows = [
+        [InlineKeyboardButton(text=adm_label, callback_data="toggle_ui:admin")],
+        [InlineKeyboardButton(text=pub_label, callback_data="toggle_ui:public")],
+    ]
+    if VERCEL_APP_URL:
+        rows.append([
+            InlineKeyboardButton(text="💡 Идеи игроков", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/admin_ideas.html")),
+            InlineKeyboardButton(text="Открыть WebApp", web_app=WebAppInfo(url=f"{VERCEL_APP_URL}/index.html")),
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def reminder_worker() -> None:
@@ -120,6 +134,16 @@ async def cmd_start(message: Message) -> None:
         f"Не забудь подписаться на @{(CHANNEL_USERNAME or '').lstrip('@')}.",
         reply_markup=kb,
     )
+
+
+@dp.message(Command("cancel"))
+async def cmd_cancel_fsm(message: Message, state: FSMContext) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    cur = await state.get_state()
+    if cur:
+        await state.clear()
+        await message.answer("Действие отменено.")
 
 
 @dp.message(Command("maint"))
@@ -207,6 +231,132 @@ async def on_toggle_ui_cb(callback: CallbackQuery) -> None:
         reply_markup=build_admin_kb(new_modes),
     )
     await callback.answer(f"Переключено на {next_ver.upper()}")
+
+
+# ======================== МОДЕРАЦИЯ ИДЕЙ В БОТЕ ========================
+@dp.callback_query(F.data.startswith("idea_act:"))
+async def on_idea_action_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Недостаточно прав", show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("Некорректные данные", show_alert=True)
+        return
+
+    action = parts[1]
+    idea_id = int(parts[2])
+    idea = get_idea_by_id(idea_id)
+    if not idea:
+        await callback.answer("Идея не найдена", show_alert=True)
+        return
+    if idea["status"] != "pending":
+        await callback.answer("Эта идея уже рассмотрена", show_alert=True)
+        return
+
+    if action == "acc0":
+        ok, msg, updated = review_user_idea(idea_id, "accepted", stars_reward=0, eta_updates="2–4")
+        if not ok or not updated:
+            await callback.answer(msg, show_alert=True)
+            return
+        await notify_user_idea_reviewed(bot, updated)
+        await callback.message.edit_text(
+            f"✅ <b>Идея #{idea_id} принята (без начисления ★)</b>\n"
+            f"• Автор: @{html.escape(updated['username'])} (ID: <code>{updated['user_id']}</code>)\n"
+            f"• Тема: <b>{html.escape(updated['theme'])}</b>\n"
+            f"• Ориентир: ближайшие <b>{html.escape(updated['eta_updates'])}</b> обновлений.",
+            parse_mode="HTML",
+        )
+        await callback.answer("Идея принята")
+        return
+
+    if action == "acc_stars":
+        await state.set_state(IdeaModerationStates.waiting_stars_amount)
+        await state.update_data(idea_id=idea_id)
+        await callback.message.answer(
+            f"⭐ Введи награду для идеи <b>#{idea_id}</b> (например: <code>15</code> или <code>25 5-7</code>, где второе число — срок обновлений 2-4 или 5-7).\n"
+            f"Для отмены отправь /cancel",
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    if action == "rej0":
+        ok, msg, updated = review_user_idea(idea_id, "rejected", reject_reason="")
+        if not ok or not updated:
+            await callback.answer(msg, show_alert=True)
+            return
+        await notify_user_idea_reviewed(bot, updated)
+        await callback.message.edit_text(
+            f"❌ <b>Идея #{idea_id} отклонена (без причины)</b>\n"
+            f"• Автор: @{html.escape(updated['username'])} (ID: <code>{updated['user_id']}</code>)\n"
+            f"• Тема: <b>{html.escape(updated['theme'])}</b>",
+            parse_mode="HTML",
+        )
+        await callback.answer("Идея отклонена")
+        return
+
+    if action == "rej_reason":
+        await state.set_state(IdeaModerationStates.waiting_reject_reason)
+        await state.update_data(idea_id=idea_id)
+        await callback.message.answer(
+            f"📝 Напиши причину отказа для идеи <b>#{idea_id}</b> одним сообщением.\n"
+            f"Для отмены отправь /cancel",
+            parse_mode="HTML",
+        )
+        await callback.answer()
+
+
+@dp.message(IdeaModerationStates.waiting_stars_amount)
+async def on_idea_stars_input(message: Message, state: FSMContext) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    idea_id = int(data.get("idea_id", 0))
+    raw = (message.text or "").strip().split()
+    if not raw or not raw[0].isdigit():
+        await message.answer("Укажи число звёзд (например: 15) или /cancel")
+        return
+
+    stars_val = int(raw[0])
+    eta_val = "5–7" if (len(raw) > 1 and "5" in raw[1]) else "2–4"
+
+    ok, msg, updated = review_user_idea(idea_id, "accepted", stars_reward=stars_val, eta_updates=eta_val)
+    await state.clear()
+    if not ok or not updated:
+        await message.answer(f"Ошибка: {msg}")
+        return
+
+    await notify_user_idea_reviewed(bot, updated)
+    await message.answer(
+        f"✅ Идея #{idea_id} принята! Начислено <b>+{stars_val} ★</b> (ориентир: <b>{eta_val}</b> обновлений).",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(IdeaModerationStates.waiting_reject_reason)
+async def on_idea_reject_reason_input(message: Message, state: FSMContext) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    idea_id = int(data.get("idea_id", 0))
+    reason_text = (message.text or "").strip()
+    if not reason_text:
+        await message.answer("Введи текст причины или /cancel")
+        return
+
+    ok, msg, updated = review_user_idea(idea_id, "rejected", reject_reason=reason_text)
+    await state.clear()
+    if not ok or not updated:
+        await message.answer(f"Ошибка: {msg}")
+        return
+
+    await notify_user_idea_reviewed(bot, updated)
+    await message.answer(
+        f"❌ Идея #{idea_id} отклонена с причиной: <i>{html.escape(reason_text)}</i>",
+        parse_mode="HTML",
+    )
 
 
 @dp.pre_checkout_query()

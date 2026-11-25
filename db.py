@@ -13,6 +13,9 @@ from config import (
     EVENT_START_TS,
 )
 
+IDEA_COOLDOWN_NORMAL_SEC = 30 * 60
+IDEA_COOLDOWN_REJECTED_SEC = 24 * 60 * 60
+
 
 def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
@@ -179,6 +182,23 @@ def init_db() -> None:
             icon TEXT DEFAULT '',
             rerolled INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_ideas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT DEFAULT '',
+            theme TEXT NOT NULL,
+            description TEXT NOT NULL,
+            implementation_logic TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            stars_reward INTEGER DEFAULT 0,
+            eta_updates TEXT DEFAULT '',
+            reject_reason TEXT DEFAULT '',
+            created_at INTEGER NOT NULL,
+            reviewed_at INTEGER DEFAULT 0
         )
     """)
 
@@ -353,3 +373,259 @@ def mark_request_done(req_id: str) -> tuple[bool, bool, tuple | None]:
         conn.commit()
     conn.close()
     return True, not already_done, (uid, cost_s, pay_s, bdown, uname)
+
+
+# ======================== ИДЕИ ИГРОКОВ ========================
+def _row_to_idea_dict(r: tuple) -> dict:
+    return {
+        "id": int(r[0]),
+        "user_id": int(r[1]),
+        "username": r[2] or "",
+        "theme": r[3] or "",
+        "description": r[4] or "",
+        "implementation_logic": r[5] or "",
+        "status": r[6] or "pending",
+        "stars_reward": int(r[7] or 0),
+        "eta_updates": r[8] or "",
+        "reject_reason": r[9] or "",
+        "created_at": int(r[10] or 0),
+        "reviewed_at": int(r[11] or 0),
+    }
+
+
+def get_user_idea_cooldown(user_id: int, now_ts: int | None = None) -> dict:
+    now = now_ts if now_ts is not None else int(time.time())
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT status, created_at, reviewed_at
+        FROM user_ideas
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return {"can_submit": True, "next_allowed_at": 0, "cooldown_reason": ""}
+
+    last_status = str(row[0] or "pending")
+    created_at = int(row[1] or 0)
+    reviewed_at = int(row[2] or 0)
+
+    if last_status == "rejected":
+        base_ts = reviewed_at if reviewed_at > 0 else created_at
+        next_at = base_ts + IDEA_COOLDOWN_REJECTED_SEC
+        if now < next_at:
+            return {
+                "can_submit": False,
+                "next_allowed_at": next_at,
+                "cooldown_reason": "rejected_24h",
+            }
+    else:
+        next_at = created_at + IDEA_COOLDOWN_NORMAL_SEC
+        if now < next_at:
+            return {
+                "can_submit": False,
+                "next_allowed_at": next_at,
+                "cooldown_reason": "normal_30m",
+            }
+
+    return {"can_submit": True, "next_allowed_at": 0, "cooldown_reason": ""}
+
+
+def create_user_idea(
+    user_id: int,
+    username: str,
+    theme: str,
+    description: str,
+    implementation_logic: str,
+) -> dict:
+    now = int(time.time())
+    clean_uname = (username or "").lstrip("@").strip()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO user_ideas (
+            user_id, username, theme, description, implementation_logic,
+            status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+        )
+        VALUES (?, ?, ?, ?, ?, 'pending', 0, '', '', ?, 0)
+        """,
+        (user_id, clean_uname, theme, description, implementation_logic, now),
+    )
+    idea_id = int(cur.lastrowid)
+    cur.execute(
+        """
+        SELECT id, user_id, username, theme, description, implementation_logic,
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+        FROM user_ideas WHERE id = ?
+        """,
+        (idea_id,),
+    )
+    idea = _row_to_idea_dict(cur.fetchone())
+    conn.commit()
+    conn.close()
+    return idea
+
+
+def get_user_ideas(user_id: int, limit: int = 30) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, user_id, username, theme, description, implementation_logic,
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+        FROM user_ideas
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (user_id, limit),
+    )
+    rows = [_row_to_idea_dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_idea_by_id(idea_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, user_id, username, theme, description, implementation_logic,
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+        FROM user_ideas
+        WHERE id = ?
+        """,
+        (idea_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return _row_to_idea_dict(row) if row else None
+
+
+def get_admin_ideas(status_filter: str = "all", limit: int = 100) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    if status_filter in ("pending", "accepted", "rejected"):
+        cur.execute(
+            """
+            SELECT id, user_id, username, theme, description, implementation_logic,
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+            FROM user_ideas
+            WHERE status = ?
+            ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC
+            LIMIT ?
+            """,
+            (status_filter, limit),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, user_id, username, theme, description, implementation_logic,
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+            FROM user_ideas
+            ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    rows = [_row_to_idea_dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def review_user_idea(
+    idea_id: int,
+    decision: str,
+    stars_reward: int = 0,
+    eta_updates: str = "2–4",
+    reject_reason: str = "",
+) -> tuple[bool, str, dict | None]:
+    if decision not in ("accepted", "rejected"):
+        return False, "Неверное решение", None
+
+    now = int(time.time())
+    stars_val = max(0, min(10000, int(stars_reward or 0)))
+    eta_val = (eta_updates or "2–4").strip() if decision == "accepted" else ""
+    reason_val = (reject_reason or "").strip()[:400] if decision == "rejected" else ""
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.isolation_level = None
+    cur = conn.cursor()
+    cur.execute("BEGIN IMMEDIATE")
+
+    try:
+        cur.execute(
+            """
+            SELECT id, user_id, username, theme, description, implementation_logic,
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+            FROM user_ideas WHERE id = ?
+            """,
+            (idea_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
+            conn.close()
+            return False, "Идея не найдена", None
+
+        cur_status = str(row[6] or "pending")
+        if cur_status != "pending":
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
+            conn.close()
+            return False, "Эта идея уже рассмотрена", _row_to_idea_dict(row)
+
+        target_uid = int(row[1])
+        reward_to_grant = stars_val if decision == "accepted" else 0
+
+        cur.execute(
+            """
+            UPDATE user_ideas
+            SET status = ?,
+                stars_reward = ?,
+                eta_updates = ?,
+                reject_reason = ?,
+                reviewed_at = ?
+            WHERE id = ?
+            """,
+            (decision, reward_to_grant, eta_val, reason_val, now, idea_id),
+        )
+
+        if reward_to_grant > 0:
+            cur.execute(
+                """
+                UPDATE users
+                SET stars_balance = stars_balance + ?,
+                    wager_left = wager_left + ?
+                WHERE user_id = ?
+                """,
+                (reward_to_grant, reward_to_grant, target_uid),
+            )
+
+        cur.execute(
+            """
+            SELECT id, user_id, username, theme, description, implementation_logic,
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+            FROM user_ideas WHERE id = ?
+            """,
+            (idea_id,),
+        )
+        updated_idea = _row_to_idea_dict(cur.fetchone())
+        if conn.in_transaction:
+            cur.execute("COMMIT")
+    except Exception as e:
+        if conn.in_transaction:
+            cur.execute("ROLLBACK")
+        conn.close()
+        return False, f"Ошибка БД: {e}", None
+
+    conn.close()
+    return True, "OK", updated_idea
