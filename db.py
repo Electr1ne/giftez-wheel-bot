@@ -394,6 +394,9 @@ def _row_to_idea_dict(r: tuple) -> dict:
 
 
 def get_user_idea_cooldown(user_id: int, now_ts: int | None = None) -> dict:
+    if int(user_id) in ADMIN_IDS:
+        return {"can_submit": True, "next_allowed_at": 0, "cooldown_reason": ""}
+
     now = now_ts if now_ts is not None else int(time.time())
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
