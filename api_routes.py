@@ -31,6 +31,7 @@ from config import (
 from db import (
     check_admin,
     create_user_idea,
+    delete_or_hide_user_idea,
     ensure_user,
     get_admin_ideas,
     get_all_user_ids,
@@ -1134,6 +1135,18 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             "message": "Идея принята" if decision == "accepted" else "Идея отклонена",
         })
 
+    async def api_admin_ideas_delete(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+
+        idea_id = int(body.get("idea_id", 0) or 0)
+        scope = str(body.get("scope", "admin")).strip()
+        ok, msg = delete_or_hide_user_idea(idea_id=idea_id, scope=scope)
+        if not ok:
+            return web.json_response({"ok": False, "message": msg})
+        return web.json_response({"ok": True, "message": msg})
+
     async def api_admin_mode(request: web.Request) -> web.Response:
         body = await request.json()
         if not check_admin(body):
@@ -1510,6 +1523,7 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/ideas/create", api_ideas_create)
     app.router.add_post("/api/admin/ideas", api_admin_ideas_list)
     app.router.add_post("/api/admin/ideas/review", api_admin_ideas_review)
+    app.router.add_post("/api/admin/ideas/delete", api_admin_ideas_delete)
 
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)

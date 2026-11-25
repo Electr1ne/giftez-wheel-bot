@@ -198,9 +198,20 @@ def init_db() -> None:
             eta_updates TEXT DEFAULT '',
             reject_reason TEXT DEFAULT '',
             created_at INTEGER NOT NULL,
-            reviewed_at INTEGER DEFAULT 0
+            reviewed_at INTEGER DEFAULT 0,
+            hidden_admin INTEGER DEFAULT 0,
+            hidden_user INTEGER DEFAULT 0
         )
     """)
+    cur.execute("PRAGMA table_info(user_ideas)")
+    idea_cols = {row[1] for row in cur.fetchall()}
+    for col_sql in [
+        "ALTER TABLE user_ideas ADD COLUMN hidden_admin INTEGER DEFAULT 0",
+        "ALTER TABLE user_ideas ADD COLUMN hidden_user INTEGER DEFAULT 0",
+    ]:
+        col_name = col_sql.split("ADD COLUMN ")[1].split()[0]
+        if col_name not in idea_cols:
+            cur.execute(col_sql)
 
     conn.commit()
     conn.close()
@@ -390,6 +401,8 @@ def _row_to_idea_dict(r: tuple) -> dict:
         "reject_reason": r[9] or "",
         "created_at": int(r[10] or 0),
         "reviewed_at": int(r[11] or 0),
+        "hidden_admin": int(r[12] or 0) if len(r) > 12 else 0,
+        "hidden_user": int(r[13] or 0) if len(r) > 13 else 0,
     }
 
 
@@ -455,9 +468,10 @@ def create_user_idea(
         """
         INSERT INTO user_ideas (
             user_id, username, theme, description, implementation_logic,
-            status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+            status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+            hidden_admin, hidden_user
         )
-        VALUES (?, ?, ?, ?, ?, 'pending', 0, '', '', ?, 0)
+        VALUES (?, ?, ?, ?, ?, 'pending', 0, '', '', ?, 0, 0, 0)
         """,
         (user_id, clean_uname, theme, description, implementation_logic, now),
     )
@@ -465,7 +479,8 @@ def create_user_idea(
     cur.execute(
         """
         SELECT id, user_id, username, theme, description, implementation_logic,
-               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+               hidden_admin, hidden_user
         FROM user_ideas WHERE id = ?
         """,
         (idea_id,),
@@ -482,9 +497,10 @@ def get_user_ideas(user_id: int, limit: int = 30) -> list[dict]:
     cur.execute(
         """
         SELECT id, user_id, username, theme, description, implementation_logic,
-               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+               hidden_admin, hidden_user
         FROM user_ideas
-        WHERE user_id = ?
+        WHERE user_id = ? AND COALESCE(hidden_user, 0) = 0
         ORDER BY id DESC
         LIMIT ?
         """,
@@ -501,7 +517,8 @@ def get_idea_by_id(idea_id: int) -> dict | None:
     cur.execute(
         """
         SELECT id, user_id, username, theme, description, implementation_logic,
-               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+               status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+               hidden_admin, hidden_user
         FROM user_ideas
         WHERE id = ?
         """,
@@ -519,9 +536,10 @@ def get_admin_ideas(status_filter: str = "all", limit: int = 100) -> list[dict]:
         cur.execute(
             """
             SELECT id, user_id, username, theme, description, implementation_logic,
-                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+                   hidden_admin, hidden_user
             FROM user_ideas
-            WHERE status = ?
+            WHERE status = ? AND COALESCE(hidden_admin, 0) = 0
             ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC
             LIMIT ?
             """,
@@ -531,8 +549,10 @@ def get_admin_ideas(status_filter: str = "all", limit: int = 100) -> list[dict]:
         cur.execute(
             """
             SELECT id, user_id, username, theme, description, implementation_logic,
-                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+                   hidden_admin, hidden_user
             FROM user_ideas
+            WHERE COALESCE(hidden_admin, 0) = 0
             ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC
             LIMIT ?
             """,
@@ -567,7 +587,8 @@ def review_user_idea(
         cur.execute(
             """
             SELECT id, user_id, username, theme, description, implementation_logic,
-                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+                   hidden_admin, hidden_user
             FROM user_ideas WHERE id = ?
             """,
             (idea_id,),
@@ -616,7 +637,8 @@ def review_user_idea(
         cur.execute(
             """
             SELECT id, user_id, username, theme, description, implementation_logic,
-                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at
+                   status, stars_reward, eta_updates, reject_reason, created_at, reviewed_at,
+                   hidden_admin, hidden_user
             FROM user_ideas WHERE id = ?
             """,
             (idea_id,),
@@ -632,3 +654,46 @@ def review_user_idea(
 
     conn.close()
     return True, "OK", updated_idea
+
+
+def delete_or_hide_user_idea(idea_id: int, scope: str) -> tuple[bool, str]:
+    """
+    scope:
+      - 'admin': скрыть только из админки (у игрока остаётся)
+      - 'user': скрыть только из «Моих идей» игрока (в админке остаётся)
+      - 'both': полностью удалить запись из базы у обоих
+    """
+    if scope not in ("admin", "user", "both"):
+        return False, "Неверный режим удаления"
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT hidden_admin, hidden_user FROM user_ideas WHERE id = ?", (idea_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "Идея не найдена"
+
+    if scope == "both":
+        cur.execute("DELETE FROM user_ideas WHERE id = ?", (idea_id,))
+        conn.commit()
+        conn.close()
+        return True, "Идея удалена из базы у обоих"
+
+    if scope == "admin":
+        if int(row[1] or 0) == 1:
+            cur.execute("DELETE FROM user_ideas WHERE id = ?", (idea_id,))
+        else:
+            cur.execute("UPDATE user_ideas SET hidden_admin = 1 WHERE id = ?", (idea_id,))
+        conn.commit()
+        conn.close()
+        return True, "Идея скрыта из админки"
+
+    # scope == "user"
+    if int(row[0] or 0) == 1:
+        cur.execute("DELETE FROM user_ideas WHERE id = ?", (idea_id,))
+    else:
+        cur.execute("UPDATE user_ideas SET hidden_user = 1 WHERE id = ?", (idea_id,))
+    conn.commit()
+    conn.close()
+    return True, "Идея удалена из списка игрока"
