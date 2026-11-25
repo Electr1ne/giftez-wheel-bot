@@ -45,10 +45,10 @@ SUB_CACHE_TTL_SEC = 60
 EVENT_START_TS = 1796072400
 EVENT_END_TS = 1798750800  # 1 января 2027, 00:00:00 МСК
 
-# Параметры общего цикла игры «Лавина»
+# Параметры общего цикла игры «Лавина» (синхронизировано с avalanche.html)
 AV_WAIT_SEC = 5.0
-AV_CRASH_PAUSE_SEC = 3.0
-AV_SLOT_LEN = 24.0
+AV_CRASH_PAUSE_SEC = 1.6
+AV_SLOT_LEN = 21.0
 
 WITHDRAW_PACKS = [
     {"cost": 15,  "payout": 13, "gift": "bear",   "name": "Мишка (15 ★ → 13 ★)"},
@@ -1232,7 +1232,7 @@ def build_cases_public_list(conn: sqlite3.Connection, uid: int) -> list[dict]:
 # ОБЩИЕ РАУНДЫ «ЛАВИНЫ» + «ЗАКОН ПОДЛОСТИ»
 # =========================================================
 def compute_avalanche_mult_at_elapsed(sec: float) -> float:
-    """Ускоренный плавный разгон от 0.00x (совпадает с формулой на фронтенде)."""
+    """Ускоренный плавный разгон от 0.00x (совпадает с формулой в avalanche.html)."""
     if sec <= 0:
         return 0.0
     val = 0.085 * sec + 0.014 * (sec ** 2) + 0.0011 * (sec ** 3)
@@ -1255,10 +1255,10 @@ def compute_avalanche_duration_for_crash(target_crash: float) -> float:
 def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float:
     """
     Хитрая логика («закон подлости»):
-    - Чаще выпадает диапазон 1.00x–2.00x (вместо сплошных 0.1–0.9x), чтобы хотелось забрать чуть позже.
+    - Чаще выпадает диапазон 1.00x–2.00x, чтобы хотелось дотянуть чуть дальше.
     - Присутствует шанс 0.00x (~14%).
-    - Если есть реальные ставки игроков с авто-выходом (например 2.00x), подстраивает сход
-      чуть ниже целевого порога или сразу после него в зависимости от размера ставки.
+    - Если есть реальные ставки с авто-выходом (например 2.00x), подстраивает сход
+      чуть ниже целевого порога или прямо перед 2.00x.
     """
     cur = conn.cursor()
     cur.execute(
@@ -1269,7 +1269,6 @@ def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float
 
     r = random.random()
 
-    # Если ставок реальных игроков нет — чаще показываем красивые иксы 1.35x .. 4.20x
     if not bets:
         if r < 0.10:
             return 0.00
@@ -1279,20 +1278,16 @@ def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float
             return round(random.uniform(2.25, 4.80), 2)
         return round(random.uniform(4.80, 12.00), 2)
 
-    # Есть реальные ставки игроков — включаем закон подлости
     if r < 0.14:
         return 0.00
 
-    # Проверяем, поставил ли кто-то авто-выход
     auto_targets = [float(b[1]) for b in bets if float(b[1] or 0) > 1.05]
     if auto_targets and random.random() < 0.62:
         min_auto = min(auto_targets)
-        # Обвал ровно за 0.02–0.11x до срабатывания авто-выхода игрока!
         if min_auto <= 2.40:
             tease = max(1.01, round(min_auto - random.uniform(0.02, 0.11), 2))
             return tease
 
-    # В остальных случаях чаще держим 1.05x .. 1.98x (прямо перед психологическим порогом 2.00x)
     if r < 0.74:
         return round(random.uniform(1.06, 1.98), 2)
     if r < 0.94:
@@ -1350,7 +1345,6 @@ def sync_shared_avalanche_round(conn: sqlite3.Connection) -> dict:
                 (round_id, effective_crash, int(now)),
             )
 
-    # Закрываем зависшие прошлые раунды, если в них остались активные ставки
     cur.execute(
         "UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE round_id != ? AND status = 'playing'",
         (round_id,),
@@ -1610,7 +1604,6 @@ async def api_open_paid_case(request: web.Request) -> web.Response:
                 conn.close()
                 return web.json_response({"ok": False, "message": "Кейс раскуплен (запас закончился)"})
 
-        # Проверяем, есть ли у игрока бесплатное открытие этого кейса (выданное админом или промокодом)
         cur.execute("SELECT count FROM user_free_cases WHERE user_id = ? AND case_id = ?", (uid, case_id))
         fc_row = cur.fetchone()
         free_opens_left = int(fc_row[0]) if fc_row else 0
@@ -1914,7 +1907,6 @@ async def api_avalanche_start(request: web.Request) -> web.Response:
             (round_id, uid, uname, bet, auto_mult, now_int),
         )
 
-        # Пересчитываем точку схода раунда с учётом новой реальной ставки («закон подлости»)
         new_crash = roll_smart_avalanche_crash(conn, round_id)
         cur.execute(
             "UPDATE avalanche_shared_rounds SET crash_mult = ? WHERE round_id = ?",
@@ -1985,7 +1977,6 @@ async def api_avalanche_cashout(request: web.Request) -> web.Response:
         active_flight_len = min(max_flight, flight_duration)
         effective_crash = 0.0 if raw_crash <= 0.0 else compute_avalanche_mult_at_elapsed(active_flight_len)
 
-        # Проверяем, не сошла ли лавина раньше
         if target_round_id != cur_round_id or effective_crash <= 0.0:
             cur.execute("UPDATE avalanche_bets SET status = 'lost', cashout_mult = 0, payout = 0 WHERE id = ?", (bet_id,))
             cur.execute("COMMIT")
@@ -1993,8 +1984,7 @@ async def api_avalanche_cashout(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "message": "Лавина сошла раньше!"})
 
         flight_elapsed = max(0.0, slot_offset - AV_WAIT_SEC)
-        # Небольшой допуск 0.45 сек на сетевой пинг
-        server_mult_with_grace = compute_avalanche_mult_at_elapsed(flight_elapsed + 0.45)
+        server_mult_with_grace = compute_avalanche_mult_at_elapsed(flight_elapsed + 0.5)
 
         if claim_mult < 0.05 or claim_mult > effective_crash or claim_mult > server_mult_with_grace:
             if claim_mult > effective_crash:
