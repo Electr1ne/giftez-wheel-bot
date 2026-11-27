@@ -4,6 +4,7 @@ import sqlite3
 import time
 
 from config import (
+    ADMIN_IDS,
     ALL_CASES_CONFIG,
     AV_CRASH_PAUSE_SEC,
     AV_SLOT_LEN,
@@ -35,6 +36,13 @@ def is_snowflakes_active_in_db(conn: sqlite3.Connection) -> bool:
     cur.execute("SELECT value FROM app_settings WHERE key = 'event_snowflakes_enabled'")
     row = cur.fetchone()
     return (row[0] if row else "1") == "1"
+
+
+def is_admin_scratch_xray_enabled(conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM app_settings WHERE key = 'admin_scratch_xray'")
+    row = cur.fetchone()
+    return (row[0] if row else "0") == "1"
 
 
 def add_event_points_from_stars(conn: sqlite3.Connection, uid: int, spent_stars: int) -> None:
@@ -224,7 +232,6 @@ def suggest_nearest_withdraw_amounts(raw_amount: int, max_available: int) -> lis
 # СКРЕТЧ-БИЛЕТ 3x3 (ВКЛАДКА «БОНУСЫ»)
 # =========================================================
 def _roll_scratch_tier_prize(tier: str) -> int:
-    """Генерирует номинал приза 1–50 ★ в зависимости от тира."""
     r = random.random()
     if tier == "low":
         if r < 0.72:
@@ -240,12 +247,6 @@ def _roll_scratch_tier_prize(tier: str) -> int:
 
 
 def generate_scratch_cells() -> list[int]:
-    """
-    Возвращает перемешанный массив из 9 ячеек:
-    - 3 ячейки первого приза (1–50 ★)
-    - 3 ячейки второго приза (1–50 ★, отличный от первого)
-    - 3 пустые ячейки (0)
-    """
     p1 = _roll_scratch_tier_prize("low")
     p2 = _roll_scratch_tier_prize("high")
     while p2 == p1:
@@ -256,12 +257,17 @@ def generate_scratch_cells() -> list[int]:
     return cells
 
 
+def _can_user_see_xray(conn: sqlite3.Connection, uid: int) -> bool:
+    return (int(uid) in ADMIN_IDS) and is_admin_scratch_xray_enabled(conn)
+
+
 def get_or_create_scratch_ticket(conn: sqlite3.Connection, uid: int, now_ts: int | None = None) -> dict:
     now = now_ts if now_ts is not None else int(time.time())
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at, COALESCE(bonus_tickets, 0)
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation,
+               created_at, finished_at, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0)
         FROM scratch_tickets
         WHERE user_id = ?
         """,
@@ -271,6 +277,7 @@ def get_or_create_scratch_ticket(conn: sqlite3.Connection, uid: int, now_ts: int
 
     need_new = False
     bonus_tickets = int(row[8]) if row else 0
+    bonus_extra_attempts = int(row[9]) if row else 0
 
     if not row:
         need_new = True
@@ -287,11 +294,11 @@ def get_or_create_scratch_ticket(conn: sqlite3.Connection, uid: int, now_ts: int
             """
             INSERT OR REPLACE INTO scratch_tickets (
                 user_id, cells_json, revealed_json, extra_bought, status,
-                prize_stars, is_consolation, created_at, finished_at, bonus_tickets
+                prize_stars, is_consolation, created_at, finished_at, bonus_tickets, bonus_extra_attempts
             )
-            VALUES (?, ?, ?, 0, 'playing', 0, 0, ?, 0, ?)
+            VALUES (?, ?, ?, 0, 'playing', 0, 0, ?, 0, ?, ?)
             """,
-            (uid, json.dumps(cells), json.dumps(revealed), now, bonus_tickets),
+            (uid, json.dumps(cells), json.dumps(revealed), now, bonus_tickets, bonus_extra_attempts),
         )
         conn.commit()
         extra_bought = 0
@@ -317,15 +324,16 @@ def get_or_create_scratch_ticket(conn: sqlite3.Connection, uid: int, now_ts: int
         is_consolation=is_consolation,
         finished_at=finished_at,
         bonus_tickets=bonus_tickets,
+        bonus_extra_attempts=bonus_extra_attempts,
+        xray_enabled=_can_user_see_xray(conn, uid),
     )
 
 
 def scratch_use_bonus_ticket_in_db(conn: sqlite3.Connection, uid: int) -> tuple[bool, str, dict | None]:
-    """Активирует следующий бесплатный билет из запаса bonus_tickets, выданных админом."""
     now = int(time.time())
     cur = conn.cursor()
     cur.execute(
-        "SELECT status, COALESCE(bonus_tickets, 0) FROM scratch_tickets WHERE user_id = ?",
+        "SELECT status, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0) FROM scratch_tickets WHERE user_id = ?",
         (uid,),
     )
     row = cur.fetchone()
@@ -333,7 +341,10 @@ def scratch_use_bonus_ticket_in_db(conn: sqlite3.Connection, uid: int) -> tuple[
         t = get_or_create_scratch_ticket(conn, uid, now)
         return True, "Новый билет готов!", t
 
-    status, bonus_tickets = str(row[0] or "playing"), int(row[1] or 0)
+    status = str(row[0] or "playing")
+    bonus_tickets = int(row[1] or 0)
+    bonus_extra = int(row[2] or 0)
+
     if status not in ("won", "lost"):
         return False, "Сначала заверши текущий билет", get_or_create_scratch_ticket(conn, uid, now)
     if bonus_tickets <= 0:
@@ -345,13 +356,48 @@ def scratch_use_bonus_ticket_in_db(conn: sqlite3.Connection, uid: int) -> tuple[
         """
         UPDATE scratch_tickets
         SET cells_json = ?, revealed_json = '[]', extra_bought = 0, status = 'playing',
-            prize_stars = 0, is_consolation = 0, created_at = ?, finished_at = 0, bonus_tickets = ?
+            prize_stars = 0, is_consolation = 0, created_at = ?, finished_at = 0,
+            bonus_tickets = ?, bonus_extra_attempts = ?
         WHERE user_id = ?
         """,
-        (json.dumps(cells), now, new_bonus, uid),
+        (json.dumps(cells), now, new_bonus, bonus_extra, uid),
     )
     conn.commit()
     return True, "Открыт новый бонусный билет!", get_or_create_scratch_ticket(conn, uid, now)
+
+
+def scratch_use_bonus_extra_attempt_in_db(conn: sqlite3.Connection, uid: int) -> tuple[bool, str, dict | None]:
+    now = int(time.time())
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT status, extra_bought, COALESCE(bonus_extra_attempts, 0) FROM scratch_tickets WHERE user_id = ?",
+        (uid,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False, "Билет не найден", None
+
+    status = str(row[0] or "playing")
+    extra_bought = int(row[1] or 0)
+    bonus_extra = int(row[2] or 0)
+
+    if extra_bought == 1:
+        return False, "4-я попытка уже активирована", get_or_create_scratch_ticket(conn, uid, now)
+    if status not in ("awaiting_extra", "playing"):
+        return False, "Текущий билет уже завершён", get_or_create_scratch_ticket(conn, uid, now)
+    if bonus_extra <= 0:
+        return False, "Нет бесплатных доп. попыток", get_or_create_scratch_ticket(conn, uid, now)
+
+    cur.execute(
+        """
+        UPDATE scratch_tickets
+        SET extra_bought = 1, status = 'playing', bonus_extra_attempts = ?
+        WHERE user_id = ?
+        """,
+        (bonus_extra - 1, uid),
+    )
+    conn.commit()
+    return True, "Бесплатная 4-я попытка активирована!", get_or_create_scratch_ticket(conn, uid, now)
 
 
 def format_scratch_public_state(
@@ -363,6 +409,8 @@ def format_scratch_public_state(
     is_consolation: int,
     finished_at: int,
     bonus_tickets: int = 0,
+    bonus_extra_attempts: int = 0,
+    xray_enabled: bool = False,
 ) -> dict:
     max_attempts = SCRATCH_FREE_ATTEMPTS + (1 if extra_bought else 0)
     used_attempts = len(revealed)
@@ -378,6 +426,7 @@ def format_scratch_public_state(
             "revealed": is_rev,
             "picked": idx in revealed_set,
             "value": int(val) if is_rev else None,
+            "xray_value": int(val) if xray_enabled else None,
         })
 
     counts: dict[int, int] = {}
@@ -402,6 +451,8 @@ def format_scratch_public_state(
         "is_consolation": bool(is_consolation),
         "next_ticket_at": next_ticket_at,
         "bonus_tickets": int(bonus_tickets),
+        "bonus_extra_attempts": int(bonus_extra_attempts),
+        "xray_enabled": bool(xray_enabled),
     }
 
 
@@ -413,7 +464,8 @@ def scratch_reveal_cell_in_db(conn: sqlite3.Connection, uid: int, cell_index: in
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at, COALESCE(bonus_tickets, 0)
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation,
+               created_at, finished_at, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0)
         FROM scratch_tickets
         WHERE user_id = ?
         """,
@@ -424,7 +476,8 @@ def scratch_reveal_cell_in_db(conn: sqlite3.Connection, uid: int, cell_index: in
         get_or_create_scratch_ticket(conn, uid, now)
         cur.execute(
             """
-            SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at, COALESCE(bonus_tickets, 0)
+            SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation,
+                   created_at, finished_at, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0)
             FROM scratch_tickets
             WHERE user_id = ?
             """,
@@ -440,25 +493,27 @@ def scratch_reveal_cell_in_db(conn: sqlite3.Connection, uid: int, cell_index: in
     is_consolation = int(row[5] or 0)
     finished_at = int(row[7] or 0)
     bonus_tickets = int(row[8] or 0)
+    bonus_extra = int(row[9] or 0)
+    xray_on = _can_user_see_xray(conn, uid)
 
     if status == "awaiting_extra":
         return False, "Бесплатные попытки закончились", format_scratch_public_state(
-            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets, bonus_extra, xray_on
         )
     if status in ("won", "lost"):
         return False, "Этот билет уже завершён", format_scratch_public_state(
-            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets, bonus_extra, xray_on
         )
 
     max_attempts = SCRATCH_FREE_ATTEMPTS + (1 if extra_bought else 0)
     if len(revealed) >= max_attempts:
         return False, "Попытки исчерпаны", format_scratch_public_state(
-            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets, bonus_extra, xray_on
         )
 
     if cell_index in revealed:
         return True, "OK", format_scratch_public_state(
-            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets, bonus_extra, xray_on
         )
 
     revealed.append(cell_index)
@@ -508,7 +563,7 @@ def scratch_reveal_cell_in_db(conn: sqlite3.Connection, uid: int, cell_index: in
     )
 
     state_dict = format_scratch_public_state(
-        cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets
+        cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at, bonus_tickets, bonus_extra, xray_on
     )
     return True, "OK", state_dict
 
@@ -518,7 +573,8 @@ def scratch_decline_extra_in_db(conn: sqlite3.Connection, uid: int) -> tuple[boo
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, finished_at, COALESCE(bonus_tickets, 0)
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation,
+               finished_at, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0)
         FROM scratch_tickets
         WHERE user_id = ?
         """,
@@ -533,10 +589,12 @@ def scratch_decline_extra_in_db(conn: sqlite3.Connection, uid: int) -> tuple[boo
     extra_bought = int(row[2] or 0)
     status = str(row[3] or "playing")
     bonus_tickets = int(row[7] or 0)
+    bonus_extra = int(row[8] or 0)
+    xray_on = _can_user_see_xray(conn, uid)
 
     if status in ("won", "lost"):
         return True, "OK", format_scratch_public_state(
-            cells, revealed, extra_bought, status, int(row[4] or 0), int(row[5] or 0), int(row[6] or 0), bonus_tickets
+            cells, revealed, extra_bought, status, int(row[4] or 0), int(row[5] or 0), int(row[6] or 0), bonus_tickets, bonus_extra, xray_on
         )
 
     cur.execute(
@@ -547,7 +605,9 @@ def scratch_decline_extra_in_db(conn: sqlite3.Connection, uid: int) -> tuple[boo
         """,
         (now, uid),
     )
-    state_dict = format_scratch_public_state(cells, revealed, extra_bought, "lost", 0, 0, now, bonus_tickets)
+    state_dict = format_scratch_public_state(
+        cells, revealed, extra_bought, "lost", 0, 0, now, bonus_tickets, bonus_extra, xray_on
+    )
     return True, "OK", state_dict
 
 
@@ -573,7 +633,6 @@ def scratch_grant_extra_attempt_in_db(conn: sqlite3.Connection, uid: int) -> boo
 # ИГРА «ЛАВИНА»: БЫСТРЫЙ РАЗГОН ДО 1.00x + ЗАКОН ПОДЛОСТИ
 # =========================================================
 def compute_avalanche_mult_at_elapsed(sec: float) -> float:
-    """Ускоренный разгон от 0.00x до 1.00x (~3.2 сек) с дальнейшим прогрессивным ускорением."""
     if sec <= 0:
         return 0.0
     val = 0.24 * sec + 0.032 * (sec ** 2) + 0.0022 * (sec ** 3)

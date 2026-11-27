@@ -64,6 +64,7 @@ from game_logic import (
     roll_smart_avalanche_crash,
     scratch_decline_extra_in_db,
     scratch_reveal_cell_in_db,
+    scratch_use_bonus_extra_attempt_in_db,
     scratch_use_bonus_ticket_in_db,
     suggest_nearest_withdraw_amounts,
     sync_shared_avalanche_round,
@@ -345,6 +346,18 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
 
         conn = sqlite3.connect(DB_PATH)
         ok, msg, ticket = scratch_use_bonus_ticket_in_db(conn, uid)
+        conn.close()
+        return web.json_response({"ok": ok, "message": msg, "ticket": ticket})
+
+    async def api_bonus_scratch_use_bonus_extra(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+
+        conn = sqlite3.connect(DB_PATH)
+        ok, msg, ticket = scratch_use_bonus_extra_attempt_in_db(conn, uid)
         conn.close()
         return web.json_response({"ok": ok, "message": msg, "ticket": ticket})
 
@@ -1259,9 +1272,9 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
                 """
                 INSERT INTO scratch_tickets (
                     user_id, cells_json, revealed_json, extra_bought, status,
-                    prize_stars, is_consolation, created_at, finished_at, bonus_tickets
+                    prize_stars, is_consolation, created_at, finished_at, bonus_tickets, bonus_extra_attempts
                 )
-                VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?)
+                VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?, 0)
                 """,
                 (target_uid, json.dumps(cells), now, new_cnt),
             )
@@ -1286,6 +1299,79 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             "message": f"Скретч-билеты у @{target_uname}: теперь {new_cnt} шт. в запасе",
         })
 
+    async def api_admin_scratch_extra(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+        target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+        delta = int(body.get("delta", 0) or 0)
+        if not target_uname or delta == 0:
+            return web.json_response({"ok": False, "message": "Укажи @username и количество доп. попыток"})
+
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE lower(username) = ?", (target_uname,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
+
+        target_uid = int(row[0])
+        cur.execute("SELECT COALESCE(bonus_extra_attempts, 0) FROM scratch_tickets WHERE user_id = ?", (target_uid,))
+        st_row = cur.fetchone()
+        if not st_row:
+            now = int(time.time())
+            cells = generate_scratch_cells()
+            new_cnt = max(0, delta)
+            cur.execute(
+                """
+                INSERT INTO scratch_tickets (
+                    user_id, cells_json, revealed_json, extra_bought, status,
+                    prize_stars, is_consolation, created_at, finished_at, bonus_tickets, bonus_extra_attempts
+                )
+                VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, 0, ?)
+                """,
+                (target_uid, json.dumps(cells), now, new_cnt),
+            )
+        else:
+            new_cnt = max(0, int(st_row[0] or 0) + delta)
+            cur.execute("UPDATE scratch_tickets SET bonus_extra_attempts = ? WHERE user_id = ?", (new_cnt, target_uid))
+        conn.commit()
+        conn.close()
+
+        if delta > 0:
+            try:
+                await bot.send_message(
+                    chat_id=target_uid,
+                    text=f"✨ Администратор выдал вам бесплатные 4-е доп. попытки для скретч-билета: +{delta} шт. (всего: {new_cnt} шт.)!",
+                )
+            except Exception:
+                pass
+
+        return web.json_response({
+            "ok": True,
+            "bonus_extra_attempts": new_cnt,
+            "message": f"Бесплатные 4-е попытки у @{target_uname}: теперь {new_cnt} шт.",
+        })
+
+    async def api_admin_scratch_xray(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+        enabled = bool(body.get("enabled", False))
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('admin_scratch_xray', ?)",
+            ("1" if enabled else "0",),
+        )
+        conn.commit()
+        conn.close()
+        return web.json_response({
+            "ok": True,
+            "system_modes": get_system_modes(),
+            "message": "Подсветка ячеек билета (тест админа) ВКЛЮЧЕНА" if enabled else "Подсветка ячеек билета ВЫКЛЮЧЕНА",
+        })
+
     async def api_admin_scratch_reset(request: web.Request) -> web.Response:
         body = await request.json()
         if not check_admin(body):
@@ -1295,19 +1381,20 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
         cur = conn.cursor()
 
         if scope == "all":
-            cur.execute("SELECT user_id, COALESCE(bonus_tickets, 0) FROM scratch_tickets")
+            cur.execute("SELECT user_id, COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0) FROM scratch_tickets")
             rows = cur.fetchall()
             now = int(time.time())
-            for r_uid, r_bonus in rows:
+            for r_uid, r_bonus, r_extra in rows:
                 cells = generate_scratch_cells()
                 cur.execute(
                     """
                     UPDATE scratch_tickets
                     SET cells_json = ?, revealed_json = '[]', extra_bought = 0, status = 'playing',
-                        prize_stars = 0, is_consolation = 0, created_at = ?, finished_at = 0, bonus_tickets = ?
+                        prize_stars = 0, is_consolation = 0, created_at = ?, finished_at = 0,
+                        bonus_tickets = ?, bonus_extra_attempts = ?
                     WHERE user_id = ?
                     """,
-                    (json.dumps(cells), now, int(r_bonus or 0), int(r_uid)),
+                    (json.dumps(cells), now, int(r_bonus or 0), int(r_extra or 0), int(r_uid)),
                 )
             conn.commit()
             conn.close()
@@ -1324,20 +1411,21 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
 
         target_uid = int(u_row[0])
-        cur.execute("SELECT COALESCE(bonus_tickets, 0) FROM scratch_tickets WHERE user_id = ?", (target_uid,))
+        cur.execute("SELECT COALESCE(bonus_tickets, 0), COALESCE(bonus_extra_attempts, 0) FROM scratch_tickets WHERE user_id = ?", (target_uid,))
         st_row = cur.fetchone()
         b_cnt = int(st_row[0]) if st_row else 0
+        e_cnt = int(st_row[1]) if st_row else 0
         now = int(time.time())
         cells = generate_scratch_cells()
         cur.execute(
             """
             INSERT OR REPLACE INTO scratch_tickets (
                 user_id, cells_json, revealed_json, extra_bought, status,
-                prize_stars, is_consolation, created_at, finished_at, bonus_tickets
+                prize_stars, is_consolation, created_at, finished_at, bonus_tickets, bonus_extra_attempts
             )
-            VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?)
+            VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?, ?)
             """,
-            (target_uid, json.dumps(cells), now, b_cnt),
+            (target_uid, json.dumps(cells), now, b_cnt, e_cnt),
         )
         conn.commit()
         conn.close()
@@ -1753,6 +1841,7 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/create_topup_invoice", api_create_topup_invoice)
     app.router.add_post("/api/bonus/scratch/state", api_bonus_scratch_state)
     app.router.add_post("/api/bonus/scratch/use_bonus", api_bonus_scratch_use_bonus)
+    app.router.add_post("/api/bonus/scratch/use_bonus_extra", api_bonus_scratch_use_bonus_extra)
     app.router.add_post("/api/bonus/scratch/reveal", api_bonus_scratch_reveal)
     app.router.add_post("/api/bonus/scratch/buy_extra", api_bonus_scratch_buy_extra)
     app.router.add_post("/api/bonus/scratch/decline", api_bonus_scratch_decline)
@@ -1775,6 +1864,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/admin/ideas/delete", api_admin_ideas_delete)
 
     app.router.add_post("/api/admin/scratch_tickets", api_admin_scratch_tickets)
+    app.router.add_post("/api/admin/scratch_extra", api_admin_scratch_extra)
+    app.router.add_post("/api/admin/scratch_xray", api_admin_scratch_xray)
     app.router.add_post("/api/admin/scratch_reset", api_admin_scratch_reset)
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)

@@ -65,6 +65,7 @@ def init_db() -> None:
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('ui_admin_version', 'v2')")
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('event_snowflakes_enabled', '1')")
     cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('avalanche_history_reset_at', '0')")
+    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_scratch_xray', '0')")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS case_stock (
@@ -224,13 +225,19 @@ def init_db() -> None:
             is_consolation INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
             finished_at INTEGER DEFAULT 0,
-            bonus_tickets INTEGER DEFAULT 0
+            bonus_tickets INTEGER DEFAULT 0,
+            bonus_extra_attempts INTEGER DEFAULT 0
         )
     """)
     cur.execute("PRAGMA table_info(scratch_tickets)")
     scratch_cols = {row[1] for row in cur.fetchall()}
-    if "bonus_tickets" not in scratch_cols:
-        cur.execute("ALTER TABLE scratch_tickets ADD COLUMN bonus_tickets INTEGER DEFAULT 0")
+    for col_sql in [
+        "ALTER TABLE scratch_tickets ADD COLUMN bonus_tickets INTEGER DEFAULT 0",
+        "ALTER TABLE scratch_tickets ADD COLUMN bonus_extra_attempts INTEGER DEFAULT 0",
+    ]:
+        col_name = col_sql.split("ADD COLUMN ")[1].split()[0]
+        if col_name not in scratch_cols:
+            cur.execute(col_sql)
 
     conn.commit()
     conn.close()
@@ -244,7 +251,8 @@ def get_system_modes() -> dict:
         SELECT key, value FROM app_settings
         WHERE key IN (
             'maintenance_mode', 'update_mode', 'ui_public_version',
-            'ui_admin_version', 'event_snowflakes_enabled', 'avalanche_history_reset_at'
+            'ui_admin_version', 'event_snowflakes_enabled', 'avalanche_history_reset_at',
+            'admin_scratch_xray'
         )
         """
     )
@@ -257,6 +265,7 @@ def get_system_modes() -> dict:
         "ui_admin_version": rows.get("ui_admin_version", "v2"),
         "event_snowflakes_enabled": rows.get("event_snowflakes_enabled", "1") == "1",
         "avalanche_history_reset_at": int(rows.get("avalanche_history_reset_at", "0") or "0"),
+        "admin_scratch_xray": rows.get("admin_scratch_xray", "0") == "1",
     }
 
 
