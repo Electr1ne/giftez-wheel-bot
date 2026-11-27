@@ -1,5 +1,6 @@
 import asyncio
 import html
+import json
 import random
 import sqlite3
 import time
@@ -56,12 +57,14 @@ from game_logic import (
     compute_user_balances,
     decompose_withdraw_amount,
     finalize_pending_drop_in_db,
+    generate_scratch_cells,
     get_or_create_scratch_ticket,
     is_snowflakes_active_in_db,
     roll_from_pool,
     roll_smart_avalanche_crash,
     scratch_decline_extra_in_db,
     scratch_reveal_cell_in_db,
+    scratch_use_bonus_ticket_in_db,
     suggest_nearest_withdraw_amounts,
     sync_shared_avalanche_round,
 )
@@ -332,6 +335,18 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             "wager_left": balances["wager_left"],
             "withdrawable_stars": balances["withdrawable_stars"],
         })
+
+    async def api_bonus_scratch_use_bonus(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+
+        conn = sqlite3.connect(DB_PATH)
+        ok, msg, ticket = scratch_use_bonus_ticket_in_db(conn, uid)
+        conn.close()
+        return web.json_response({"ok": ok, "message": msg, "ticket": ticket})
 
     async def api_bonus_scratch_reveal(request: web.Request) -> web.Response:
         body = await request.json()
@@ -1216,6 +1231,118 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
         })
 
     # ======================== ADMIN ENDPOINTS ========================
+    async def api_admin_scratch_tickets(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+        target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+        delta = int(body.get("delta", 0) or 0)
+        if not target_uname or delta == 0:
+            return web.json_response({"ok": False, "message": "Укажи @username и количество билетов"})
+
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE lower(username) = ?", (target_uname,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
+
+        target_uid = int(row[0])
+        cur.execute("SELECT COALESCE(bonus_tickets, 0) FROM scratch_tickets WHERE user_id = ?", (target_uid,))
+        st_row = cur.fetchone()
+        if not st_row:
+            now = int(time.time())
+            cells = generate_scratch_cells()
+            new_cnt = max(0, delta)
+            cur.execute(
+                """
+                INSERT INTO scratch_tickets (
+                    user_id, cells_json, revealed_json, extra_bought, status,
+                    prize_stars, is_consolation, created_at, finished_at, bonus_tickets
+                )
+                VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?)
+                """,
+                (target_uid, json.dumps(cells), now, new_cnt),
+            )
+        else:
+            new_cnt = max(0, int(st_row[0] or 0) + delta)
+            cur.execute("UPDATE scratch_tickets SET bonus_tickets = ? WHERE user_id = ?", (new_cnt, target_uid))
+        conn.commit()
+        conn.close()
+
+        if delta > 0:
+            try:
+                await bot.send_message(
+                    chat_id=target_uid,
+                    text=f"🎟 Администратор выдал вам бесплатные скретч-билеты: +{delta} шт. (всего в запасе: {new_cnt} шт.)! Открывай во вкладке «Бонусы».",
+                )
+            except Exception:
+                pass
+
+        return web.json_response({
+            "ok": True,
+            "bonus_tickets": new_cnt,
+            "message": f"Скретч-билеты у @{target_uname}: теперь {new_cnt} шт. в запасе",
+        })
+
+    async def api_admin_scratch_reset(request: web.Request) -> web.Response:
+        body = await request.json()
+        if not check_admin(body):
+            return web.json_response({"ok": False, "message": "Нет прав админа"}, status=403)
+        scope = str(body.get("scope", "one")).strip()
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+
+        if scope == "all":
+            cur.execute("SELECT user_id, COALESCE(bonus_tickets, 0) FROM scratch_tickets")
+            rows = cur.fetchall()
+            now = int(time.time())
+            for r_uid, r_bonus in rows:
+                cells = generate_scratch_cells()
+                cur.execute(
+                    """
+                    UPDATE scratch_tickets
+                    SET cells_json = ?, revealed_json = '[]', extra_bought = 0, status = 'playing',
+                        prize_stars = 0, is_consolation = 0, created_at = ?, finished_at = 0, bonus_tickets = ?
+                    WHERE user_id = ?
+                    """,
+                    (json.dumps(cells), now, int(r_bonus or 0), int(r_uid)),
+                )
+            conn.commit()
+            conn.close()
+            return web.json_response({"ok": True, "message": f"Скретч-билеты и 24ч таймер сброшены у всех ({len(rows)} игроков)"})
+
+        target_uname = str(body.get("username", "")).lstrip("@").strip().lower()
+        if not target_uname:
+            conn.close()
+            return web.json_response({"ok": False, "message": "Укажи @username игрока"})
+        cur.execute("SELECT user_id FROM users WHERE lower(username) = ?", (target_uname,))
+        u_row = cur.fetchone()
+        if not u_row:
+            conn.close()
+            return web.json_response({"ok": False, "message": f"Игрок @{target_uname} не найден"})
+
+        target_uid = int(u_row[0])
+        cur.execute("SELECT COALESCE(bonus_tickets, 0) FROM scratch_tickets WHERE user_id = ?", (target_uid,))
+        st_row = cur.fetchone()
+        b_cnt = int(st_row[0]) if st_row else 0
+        now = int(time.time())
+        cells = generate_scratch_cells()
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO scratch_tickets (
+                user_id, cells_json, revealed_json, extra_bought, status,
+                prize_stars, is_consolation, created_at, finished_at, bonus_tickets
+            )
+            VALUES (?, ?, '[]', 0, 'playing', 0, 0, ?, 0, ?)
+            """,
+            (target_uid, json.dumps(cells), now, b_cnt),
+        )
+        conn.commit()
+        conn.close()
+        return web.json_response({"ok": True, "message": f"24ч таймер скретч-билета сброшен для @{target_uname}"})
+
     async def api_admin_ideas_list(request: web.Request) -> web.Response:
         body = await request.json()
         if not check_admin(body):
@@ -1625,6 +1752,7 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/check_sub", api_check_sub)
     app.router.add_post("/api/create_topup_invoice", api_create_topup_invoice)
     app.router.add_post("/api/bonus/scratch/state", api_bonus_scratch_state)
+    app.router.add_post("/api/bonus/scratch/use_bonus", api_bonus_scratch_use_bonus)
     app.router.add_post("/api/bonus/scratch/reveal", api_bonus_scratch_reveal)
     app.router.add_post("/api/bonus/scratch/buy_extra", api_bonus_scratch_buy_extra)
     app.router.add_post("/api/bonus/scratch/decline", api_bonus_scratch_decline)
@@ -1646,6 +1774,8 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/admin/ideas/review", api_admin_ideas_review)
     app.router.add_post("/api/admin/ideas/delete", api_admin_ideas_delete)
 
+    app.router.add_post("/api/admin/scratch_tickets", api_admin_scratch_tickets)
+    app.router.add_post("/api/admin/scratch_reset", api_admin_scratch_reset)
     app.router.add_post("/api/admin/mode", api_admin_mode)
     app.router.add_post("/api/admin/ui_version", api_admin_ui_version)
     app.router.add_post("/api/admin/event_toggle", api_admin_event_toggle)

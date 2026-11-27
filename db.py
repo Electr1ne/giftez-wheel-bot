@@ -223,9 +223,14 @@ def init_db() -> None:
             prize_stars INTEGER DEFAULT 0,
             is_consolation INTEGER DEFAULT 0,
             created_at INTEGER NOT NULL,
-            finished_at INTEGER DEFAULT 0
+            finished_at INTEGER DEFAULT 0,
+            bonus_tickets INTEGER DEFAULT 0
         )
     """)
+    cur.execute("PRAGMA table_info(scratch_tickets)")
+    scratch_cols = {row[1] for row in cur.fetchall()}
+    if "bonus_tickets" not in scratch_cols:
+        cur.execute("ALTER TABLE scratch_tickets ADD COLUMN bonus_tickets INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -671,12 +676,6 @@ def review_user_idea(
 
 
 def delete_or_hide_user_idea(idea_id: int, scope: str) -> tuple[bool, str]:
-    """
-    scope:
-      - 'admin': скрыть только из админки (у игрока остаётся)
-      - 'user': скрыть только из «Моих идей» игрока (в админке остаётся)
-      - 'both': полностью удалить запись из базы у обоих
-    """
     if scope not in ("admin", "user", "both"):
         return False, "Неверный режим удаления"
 
