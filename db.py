@@ -213,6 +213,20 @@ def init_db() -> None:
         if col_name not in idea_cols:
             cur.execute(col_sql)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS scratch_tickets (
+            user_id INTEGER PRIMARY KEY,
+            cells_json TEXT NOT NULL,
+            revealed_json TEXT NOT NULL,
+            extra_bought INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'playing',
+            prize_stars INTEGER DEFAULT 0,
+            is_consolation INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            finished_at INTEGER DEFAULT 0
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -689,7 +703,6 @@ def delete_or_hide_user_idea(idea_id: int, scope: str) -> tuple[bool, str]:
         conn.close()
         return True, "Идея скрыта из админки"
 
-    # scope == "user"
     if int(row[0] or 0) == 1:
         cur.execute("DELETE FROM user_ideas WHERE id = ?", (idea_id,))
     else:

@@ -24,6 +24,7 @@ from config import (
     EVENT_STAGES,
     EVENT_START_TS,
     GIFTS_CATALOG,
+    SCRATCH_EXTRA_ATTEMPT_PRICE,
     SUB_CACHE_TTL_SEC,
     VERCEL_APP_URL,
     WITHDRAW_PACKS,
@@ -55,9 +56,12 @@ from game_logic import (
     compute_user_balances,
     decompose_withdraw_amount,
     finalize_pending_drop_in_db,
+    get_or_create_scratch_ticket,
     is_snowflakes_active_in_db,
     roll_from_pool,
     roll_smart_avalanche_crash,
+    scratch_decline_extra_in_db,
+    scratch_reveal_cell_in_db,
     suggest_nearest_withdraw_amounts,
     sync_shared_avalanche_round,
 )
@@ -303,6 +307,119 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
             prices=[LabeledPrice(label=f"{stars} ★ на баланс", amount=stars)],
         )
         return web.json_response({"ok": True, "invoice_link": link, "payload": payload})
+
+    # ======================== СКРЕТЧ-БИЛЕТ (БОНУСЫ) ========================
+    async def api_bonus_scratch_state(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+        ensure_user(uid, (tg_user.get("username") or "").lstrip("@"), tg_user.get("first_name") or "")
+
+        conn = sqlite3.connect(DB_PATH)
+        ticket = get_or_create_scratch_ticket(conn, uid)
+        cur = conn.cursor()
+        cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+        r_u = cur.fetchone() or (0, 0)
+        conn.close()
+
+        balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
+        return web.json_response({
+            "ok": True,
+            "ticket": ticket,
+            "stars_balance": balances["stars_balance"],
+            "wager_left": balances["wager_left"],
+            "withdrawable_stars": balances["withdrawable_stars"],
+        })
+
+    async def api_bonus_scratch_reveal(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+        cell_index = int(body.get("cell_index", -1))
+
+        conn = sqlite3.connect(DB_PATH)
+        conn.isolation_level = None
+        cur = conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        try:
+            ok, msg, ticket = scratch_reveal_cell_in_db(conn, uid, cell_index)
+            cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+            r_u = cur.fetchone() or (0, 0)
+            if conn.in_transaction:
+                cur.execute("COMMIT")
+        except Exception as e:
+            if conn.in_transaction:
+                cur.execute("ROLLBACK")
+            conn.close()
+            return web.json_response({"ok": False, "message": f"Ошибка билета: {e}"})
+
+        conn.close()
+        balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
+        return web.json_response({
+            "ok": ok,
+            "message": msg,
+            "ticket": ticket,
+            "stars_balance": balances["stars_balance"],
+            "wager_left": balances["wager_left"],
+            "withdrawable_stars": balances["withdrawable_stars"],
+        })
+
+    async def api_bonus_scratch_buy_extra(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+        ensure_user(uid, (tg_user.get("username") or "").lstrip("@"), tg_user.get("first_name") or "")
+
+        conn = sqlite3.connect(DB_PATH)
+        ticket = get_or_create_scratch_ticket(conn, uid)
+        conn.close()
+
+        if ticket["extra_bought"]:
+            return web.json_response({"ok": False, "message": "Дополнительная попытка уже активна"})
+        if ticket["status"] not in ("awaiting_extra", "playing"):
+            return web.json_response({"ok": False, "message": "Текущий билет уже завершён"})
+
+        price = int(SCRATCH_EXTRA_ATTEMPT_PRICE)
+        payload = f"scratch_extra:{uid}:{price}:{uuid.uuid4().hex[:8]}"
+        link = await bot.create_invoice_link(
+            title=f"Дополнительная попытка ({price} ★)",
+            description="Открыть ещё 1 ячейку в текущем скретч-билете GiftezUp",
+            payload=payload,
+            currency="XTR",
+            prices=[LabeledPrice(label=f"Доп. попытка ({price} ★)", amount=price)],
+        )
+        return web.json_response({"ok": True, "invoice_link": link, "payload": payload})
+
+    async def api_bonus_scratch_decline(request: web.Request) -> web.Response:
+        body = await request.json()
+        tg_user = verify_init_data(body.get("initData", ""))
+        if not tg_user:
+            return web.json_response({"ok": False, "message": "Ошибка авторизации"}, status=401)
+        uid = int(tg_user["id"])
+
+        conn = sqlite3.connect(DB_PATH)
+        ok, msg, ticket = scratch_decline_extra_in_db(conn, uid)
+        conn.commit()
+        cur = conn.cursor()
+        cur.execute("SELECT stars_balance, wager_left FROM users WHERE user_id = ?", (uid,))
+        r_u = cur.fetchone() or (0, 0)
+        conn.close()
+
+        balances = compute_user_balances(int(r_u[0]), int(r_u[1]))
+        return web.json_response({
+            "ok": ok,
+            "message": msg,
+            "ticket": ticket,
+            "stars_balance": balances["stars_balance"],
+            "wager_left": balances["wager_left"],
+            "withdrawable_stars": balances["withdrawable_stars"],
+        })
 
     async def api_spin_daily(request: web.Request) -> web.Response:
         body = await request.json()
@@ -1507,6 +1624,10 @@ def register_api_routes(app: web.Application, bot: Bot) -> None:
     app.router.add_post("/api/state", api_state)
     app.router.add_post("/api/check_sub", api_check_sub)
     app.router.add_post("/api/create_topup_invoice", api_create_topup_invoice)
+    app.router.add_post("/api/bonus/scratch/state", api_bonus_scratch_state)
+    app.router.add_post("/api/bonus/scratch/reveal", api_bonus_scratch_reveal)
+    app.router.add_post("/api/bonus/scratch/buy_extra", api_bonus_scratch_buy_extra)
+    app.router.add_post("/api/bonus/scratch/decline", api_bonus_scratch_decline)
     app.router.add_post("/api/spin_daily", api_spin_daily)
     app.router.add_post("/api/open_paid_case", api_open_paid_case)
     app.router.add_post("/api/reroll_case_drop", api_reroll_case_drop)

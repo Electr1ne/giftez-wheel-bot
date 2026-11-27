@@ -38,6 +38,7 @@ from db import (
     set_system_mode,
     set_ui_version,
 )
+from game_logic import scratch_grant_extra_attempt_in_db
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -393,7 +394,20 @@ async def on_successful_payment(message: Message) -> None:
                 f"Для вывода пополненных звёзд их нужно отыграть в играх или кейсах."
             )
         except Exception as e:
-            print(f"[successful_payment] Ошибка начисления: {e}")
+            print(f"[successful_payment:topup] Ошибка начисления: {e}")
+
+    elif len(parts) >= 3 and parts[0] == "scratch_extra":
+        try:
+            uid = int(parts[1])
+            conn = sqlite3.connect(DB_PATH)
+            scratch_grant_extra_attempt_in_db(conn, uid)
+            conn.commit()
+            conn.close()
+            await message.answer(
+                "🎟 Дополнительная попытка в скретч-билете разблокирована! Возвращайся во вкладку «Бонусы» и сотри ещё одну ячейку."
+            )
+        except Exception as e:
+            print(f"[successful_payment:scratch_extra] Ошибка разблокировки: {e}")
 
 
 @dp.callback_query(F.data.startswith("done_claim:"))

@@ -1,3 +1,4 @@
+import json
 import random
 import sqlite3
 import time
@@ -9,6 +10,11 @@ from config import (
     AV_WAIT_SEC,
     DAILY_POOL,
     GIFTS_CATALOG,
+    SCRATCH_CONSOLATION_MAX,
+    SCRATCH_CONSOLATION_MIN,
+    SCRATCH_COOLDOWN_SEC,
+    SCRATCH_EXTRA_ATTEMPT_PRICE,
+    SCRATCH_FREE_ATTEMPTS,
 )
 from db import is_case_visible_for_user, is_event_unlocked_for_user
 
@@ -215,6 +221,320 @@ def suggest_nearest_withdraw_amounts(raw_amount: int, max_available: int) -> lis
 
 
 # =========================================================
+# СКРЕТЧ-БИЛЕТ 3x3 (ВКЛАДКА «БОНУСЫ»)
+# =========================================================
+def _roll_scratch_tier_prize(tier: str) -> int:
+    """Генерирует номинал приза 1–50 ★ в зависимости от тира."""
+    r = random.random()
+    if tier == "low":
+        if r < 0.72:
+            return random.randint(1, 5)
+        if r < 0.94:
+            return random.randint(6, 10)
+        return random.randint(11, 18)
+    # high tier
+    if r < 0.58:
+        return random.randint(8, 18)
+    if r < 0.88:
+        return random.randint(19, 32)
+    return random.randint(33, 50)
+
+
+def generate_scratch_cells() -> list[int]:
+    """
+    Возвращает перемешанный массив из 9 ячеек:
+    - 3 ячейки первого приза (1–50 ★)
+    - 3 ячейки второго приза (1–50 ★, отличный от первого)
+    - 3 пустые ячейки (0)
+    """
+    p1 = _roll_scratch_tier_prize("low")
+    p2 = _roll_scratch_tier_prize("high")
+    while p2 == p1:
+        p2 = random.randint(2, 50)
+
+    cells = [p1, p1, p1, p2, p2, p2, 0, 0, 0]
+    random.shuffle(cells)
+    return cells
+
+
+def get_or_create_scratch_ticket(conn: sqlite3.Connection, uid: int, now_ts: int | None = None) -> dict:
+    now = now_ts if now_ts is not None else int(time.time())
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at
+        FROM scratch_tickets
+        WHERE user_id = ?
+        """,
+        (uid,),
+    )
+    row = cur.fetchone()
+
+    need_new = False
+    if not row:
+        need_new = True
+    else:
+        st = str(row[3] or "playing")
+        fin_at = int(row[7] or 0)
+        if st in ("won", "lost") and fin_at > 0 and (now - fin_at) >= SCRATCH_COOLDOWN_SEC:
+            need_new = True
+
+    if need_new:
+        cells = generate_scratch_cells()
+        revealed: list[int] = []
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO scratch_tickets (
+                user_id, cells_json, revealed_json, extra_bought, status,
+                prize_stars, is_consolation, created_at, finished_at
+            )
+            VALUES (?, ?, ?, 0, 'playing', 0, 0, ?, 0)
+            """,
+            (uid, json.dumps(cells), json.dumps(revealed), now),
+        )
+        conn.commit()
+        extra_bought = 0
+        status = "playing"
+        prize_stars = 0
+        is_consolation = 0
+        finished_at = 0
+    else:
+        cells = json.loads(row[0])
+        revealed = [int(x) for x in json.loads(row[1])]
+        extra_bought = int(row[2] or 0)
+        status = str(row[3] or "playing")
+        prize_stars = int(row[4] or 0)
+        is_consolation = int(row[5] or 0)
+        finished_at = int(row[7] or 0)
+
+    return format_scratch_public_state(
+        cells=cells,
+        revealed=revealed,
+        extra_bought=extra_bought,
+        status=status,
+        prize_stars=prize_stars,
+        is_consolation=is_consolation,
+        finished_at=finished_at,
+    )
+
+
+def format_scratch_public_state(
+    cells: list[int],
+    revealed: list[int],
+    extra_bought: int,
+    status: str,
+    prize_stars: int,
+    is_consolation: int,
+    finished_at: int,
+) -> dict:
+    max_attempts = SCRATCH_FREE_ATTEMPTS + (1 if extra_bought else 0)
+    used_attempts = len(revealed)
+    attempts_left = max(0, max_attempts - used_attempts) if status in ("playing", "awaiting_extra") else 0
+
+    revealed_set = set(revealed)
+    reveal_all = status in ("won", "lost")
+    public_cells = []
+    for idx, val in enumerate(cells):
+        is_rev = reveal_all or (idx in revealed_set)
+        public_cells.append({
+            "index": idx,
+            "revealed": is_rev,
+            "picked": idx in revealed_set,
+            "value": int(val) if is_rev else None,
+        })
+
+    # Проверяем, есть ли у игрока пара из открытых призов (для предложения 4-й попытки)
+    counts: dict[int, int] = {}
+    for idx in revealed:
+        v = int(cells[idx])
+        if v > 0:
+            counts[v] = counts.get(v, 0) + 1
+    has_pair = any(c >= 2 for c in counts.values())
+
+    next_ticket_at = (finished_at + SCRATCH_COOLDOWN_SEC) if (status in ("won", "lost") and finished_at > 0) else 0
+
+    return {
+        "status": status,  # 'playing' | 'awaiting_extra' | 'won' | 'lost'
+        "cells": public_cells,
+        "used_attempts": used_attempts,
+        "max_attempts": max_attempts,
+        "attempts_left": attempts_left,
+        "extra_bought": bool(extra_bought),
+        "extra_price": SCRATCH_EXTRA_ATTEMPT_PRICE,
+        "has_pair": has_pair,
+        "prize_stars": int(prize_stars),
+        "is_consolation": bool(is_consolation),
+        "next_ticket_at": next_ticket_at,
+    }
+
+
+def scratch_reveal_cell_in_db(conn: sqlite3.Connection, uid: int, cell_index: int) -> tuple[bool, str, dict | None]:
+    if cell_index < 0 or cell_index > 8:
+        return False, "Некорректная ячейка", None
+
+    now = int(time.time())
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at
+        FROM scratch_tickets
+        WHERE user_id = ?
+        """,
+        (uid,),
+    )
+    row = cur.fetchone()
+    if not row:
+        get_or_create_scratch_ticket(conn, uid, now)
+        cur.execute(
+            """
+            SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, created_at, finished_at
+            FROM scratch_tickets
+            WHERE user_id = ?
+            """,
+            (uid,),
+        )
+        row = cur.fetchone()
+
+    cells = [int(x) for x in json.loads(row[0])]
+    revealed = [int(x) for x in json.loads(row[1])]
+    extra_bought = int(row[2] or 0)
+    status = str(row[3] or "playing")
+    prize_stars = int(row[4] or 0)
+    is_consolation = int(row[5] or 0)
+    finished_at = int(row[7] or 0)
+
+    if status == "awaiting_extra":
+        return False, "Бесплатные попытки закончились", format_scratch_public_state(
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at
+        )
+    if status in ("won", "lost"):
+        return False, "Этот билет уже завершён", format_scratch_public_state(
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at
+        )
+
+    max_attempts = SCRATCH_FREE_ATTEMPTS + (1 if extra_bought else 0)
+    if len(revealed) >= max_attempts:
+        return False, "Попытки исчерпаны", format_scratch_public_state(
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at
+        )
+
+    if cell_index in revealed:
+        return True, "OK", format_scratch_public_state(
+            cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at
+        )
+
+    revealed.append(cell_index)
+
+    # Проверяем, собралась ли тройка одинаковых призов (> 0)
+    counts: dict[int, int] = {}
+    for idx in revealed:
+        v = cells[idx]
+        if v > 0:
+            counts[v] = counts.get(v, 0) + 1
+
+    won_prize = 0
+    for val, cnt in counts.items():
+        if cnt >= 3:
+            won_prize = val
+            break
+
+    if won_prize > 0:
+        status = "won"
+        prize_stars = won_prize
+        is_consolation = 0
+        finished_at = now
+        cur.execute(
+            "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
+            (won_prize, won_prize, uid),
+        )
+    elif len(revealed) >= max_attempts:
+        if not extra_bought:
+            # 3 бесплатные попытки израсходованы — предлагаем 4-ю за 5 ★
+            status = "awaiting_extra"
+        else:
+            # 4-я купленная попытка тоже не дала тройку -> утешительный бонус 1–6 ★
+            consolation = random.randint(SCRATCH_CONSOLATION_MIN, SCRATCH_CONSOLATION_MAX)
+            status = "lost"
+            prize_stars = consolation
+            is_consolation = 1
+            finished_at = now
+            cur.execute(
+                "UPDATE users SET stars_balance = stars_balance + ?, wager_left = wager_left + ? WHERE user_id = ?",
+                (consolation, consolation, uid),
+            )
+
+    cur.execute(
+        """
+        UPDATE scratch_tickets
+        SET revealed_json = ?, status = ?, prize_stars = ?, is_consolation = ?, finished_at = ?
+        WHERE user_id = ?
+        """,
+        (json.dumps(revealed), status, prize_stars, is_consolation, finished_at, uid),
+    )
+
+    state_dict = format_scratch_public_state(
+        cells, revealed, extra_bought, status, prize_stars, is_consolation, finished_at
+    )
+    return True, "OK", state_dict
+
+
+def scratch_decline_extra_in_db(conn: sqlite3.Connection, uid: int) -> tuple[bool, str, dict | None]:
+    now = int(time.time())
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT cells_json, revealed_json, extra_bought, status, prize_stars, is_consolation, finished_at
+        FROM scratch_tickets
+        WHERE user_id = ?
+        """,
+        (uid,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False, "Билет не найден", None
+
+    cells = [int(x) for x in json.loads(row[0])]
+    revealed = [int(x) for x in json.loads(row[1])]
+    extra_bought = int(row[2] or 0)
+    status = str(row[3] or "playing")
+
+    if status in ("won", "lost"):
+        return True, "OK", format_scratch_public_state(
+            cells, revealed, extra_bought, status, int(row[4] or 0), int(row[5] or 0), int(row[6] or 0)
+        )
+
+    # Отказ от 4-й попытки -> билет сгорает с 0 ★
+    cur.execute(
+        """
+        UPDATE scratch_tickets
+        SET status = 'lost', prize_stars = 0, is_consolation = 0, finished_at = ?
+        WHERE user_id = ?
+        """,
+        (now, uid),
+    )
+    state_dict = format_scratch_public_state(cells, revealed, extra_bought, "lost", 0, 0, now)
+    return True, "OK", state_dict
+
+
+def scratch_grant_extra_attempt_in_db(conn: sqlite3.Connection, uid: int) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT status, extra_bought FROM scratch_tickets WHERE user_id = ?", (uid,))
+    row = cur.fetchone()
+    if not row:
+        return False
+    status, extra_bought = str(row[0]), int(row[1] or 0)
+    if extra_bought == 1:
+        return True
+    if status not in ("awaiting_extra", "playing"):
+        return False
+    cur.execute(
+        "UPDATE scratch_tickets SET extra_bought = 1, status = 'playing' WHERE user_id = ?",
+        (uid,),
+    )
+    return True
+
+
+# =========================================================
 # ИГРА «ЛАВИНА»: БЫСТРЫЙ РАЗГОН ДО 1.00x + ЗАКОН ПОДЛОСТИ
 # =========================================================
 def compute_avalanche_mult_at_elapsed(sec: float) -> float:
@@ -239,12 +559,6 @@ def compute_avalanche_duration_for_crash(target_crash: float) -> float:
 
 
 def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float:
-    """
-    Хитрая логика («закон подлости»):
-    - Чаще выпадает диапазон 1.05x–1.98x вместо сплошных 0.1–0.9x.
-    - Присутствует шанс краша на 0.00x (~14%).
-    - Если есть ставки реальных игроков с авто-выходом, часто роняет лавину за 0.02–0.11x до цели.
-    """
     cur = conn.cursor()
     cur.execute(
         "SELECT bet_stars, auto_mult FROM avalanche_bets WHERE round_id = ? AND status = 'playing'",
@@ -281,7 +595,6 @@ def roll_smart_avalanche_crash(conn: sqlite3.Connection, round_id: str) -> float
 
 
 def sync_shared_avalanche_round(conn: sqlite3.Connection, auto_commit: bool = True) -> dict:
-    """Синхронизирует состояние общего раунда «Лавины» по мировому времени."""
     now = time.time()
     epoch_idx = int(now // AV_SLOT_LEN)
     slot_offset = now - epoch_idx * AV_SLOT_LEN

@@ -19,6 +19,13 @@ DB_PATH = os.getenv("DB_PATH") or "roulette.db"
 COOLDOWN_SEC = 24 * 60 * 60
 SUB_CACHE_TTL_SEC = 60
 
+# Параметры скретч-билета (вкладка «Бонусы»)
+SCRATCH_COOLDOWN_SEC = 24 * 60 * 60
+SCRATCH_FREE_ATTEMPTS = 3
+SCRATCH_EXTRA_ATTEMPT_PRICE = 5
+SCRATCH_CONSOLATION_MIN = 1
+SCRATCH_CONSOLATION_MAX = 6
+
 # Старт зимнего ивента: 1 декабря 2026, 00:00:00 МСК (UTC+3) == 30 ноября 2026, 21:00:00 UTC
 EVENT_START_TS = 1796072400
 EVENT_END_TS = 1798750800  # 1 января 2027, 00:00:00 МСК
